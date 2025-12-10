@@ -1,0 +1,15 @@
+curl 'https://www.airportthai.co.th/wp-content/uploads/2022/06/BanerAPPF30.jpg' \
+  -H 'accept: image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8' \
+  -H 'accept-language: en-US,en;q=0.9' \
+  -H 'cache-control: no-cache' \
+  -b 'pll_language=en; dpdpa_consent={%22uniqueID%22:%22pdpa_64d19f081d868%22%2C%22datestamp%22:1765386749%2C%22choices%22:%22%22}; wordpress_test_cookie=WP%20Cookie%20check; PHPSESSID=qlh43u46ro50kd2rcv532m1jt3' \
+  -H 'pragma: no-cache' \
+  -H 'priority: i' \
+  -H 'referer: https://www.airportthai.co.th/en/' \
+  -H 'sec-ch-ua: "Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"' \
+  -H 'sec-ch-ua-mobile: ?1' \
+  -H 'sec-ch-ua-platform: "Android"' \
+  -H 'sec-fetch-dest: image' \
+  -H 'sec-fetch-mode: no-cors' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'user-agent: Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36'
