@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/letgo/useragent"
 	"github.com/letgo/userlist"
 	"github.com/letgo/wordlist"
 )
@@ -65,4 +66,31 @@ func (m *Menu) generatePasswordList() {
 	} else {
 		fmt.Printf("Password list generated and saved to %s\n", filename)
 	}
+}
+
+// generateUserAgents generates user agents and saves to user-agent.txt
+func (m *Menu) generateUserAgents() {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter amount to generate (default: 100): ")
+	countStr, _ := reader.ReadString('\n')
+	countStr = strings.TrimSpace(countStr)
+	count := 100
+	if countStr != "" {
+		if c, err := strconv.Atoi(countStr); err == nil && c > 0 {
+			count = c
+		}
+	}
+
+	// Create generator with random strategy
+	config := useragent.UserAgentConfig{
+		Strategy: useragent.StrategyRandom,
+	}
+	generator := useragent.New(config)
+
+	// Generate and write to user-agent.txt
+	if err := generator.GenerateUserAgents(count); err != nil {
+		fmt.Printf("Error generating user agents: %v\n", err)
+		return
+	}
+	fmt.Printf("User agents with %d entries generated and saved to user-agent.txt\n", count)
 }

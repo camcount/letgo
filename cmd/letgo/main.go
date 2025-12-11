@@ -17,6 +17,7 @@ var requiredTxtFiles = []string{
 	"valid-url.txt",
 	"results.txt",
 	"cURL-DDOS.txt",
+	"user-agent.txt",
 }
 
 // List of required proxy files

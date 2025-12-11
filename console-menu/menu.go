@@ -32,14 +32,15 @@ func (m *Menu) Display() {
 	fmt.Println("[Generate]")
 	fmt.Println("  3) Generate User List")
 	fmt.Println("  4) Generate Password List")
+	fmt.Println("  5) Generate User Agents")
 	fmt.Println("[Attack]")
-	fmt.Println("  5) Attack Brute force with cURL")
-	fmt.Println("  6) DDoS Attack (cURL)")
+	fmt.Println("  6) Attack Brute force with cURL")
+	fmt.Println("  7) DDoS Attack (cURL)")
 	fmt.Println("[Proxy]")
-	fmt.Println("  7) Scrape Proxies")
-	fmt.Println("  8) Validate Proxies")
-	fmt.Println("  9) Exit")
-	fmt.Print("Choose an option [1-9]: ")
+	fmt.Println("  8) Scrape Proxies")
+	fmt.Println("  9) Validate Proxies")
+	fmt.Println("  10) Exit")
+	fmt.Print("Choose an option [1-10]: ")
 }
 
 // Process handles the user's menu choice
@@ -58,14 +59,16 @@ func (m *Menu) Process() bool {
 	case "4":
 		m.generatePasswordList()
 	case "5":
-		m.attackWithCurl()
+		m.generateUserAgents()
 	case "6":
-		m.ddosAttack()
+		m.attackWithCurl()
 	case "7":
-		m.scrapeProxies()
+		m.ddosAttack()
 	case "8":
-		m.validateProxies()
+		m.scrapeProxies()
 	case "9":
+		m.validateProxies()
+	case "10":
 		fmt.Println("Exiting...")
 		return false
 	default:
