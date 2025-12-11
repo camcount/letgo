@@ -19,3 +19,36 @@ curl 'https://staffportal.airportthai.co.th/fo/account/login' \
   -H 'Accept: application/json, text/javascript, */*; q=0.01' \
   -H 'Content-Type: application/x-www-form-urlencoded; charset=UTF-8' \
   --data-raw 'userName=sdfdsf&password=sdfsd&returnUrl='
+
+  curl 'https://tdac.immigration.go.th/arrival-card/main.f8c2f43f43744a76.js' \
+  -H 'accept: */*' \
+  -H 'accept-language: en-US,en;q=0.9' \
+  -H 'cache-control: no-cache' \
+  -b 'cf_clearance=YbXUEJf9BxsJNfccJS5HpgoXwbnv1RnLlrq9WLsjjSk-1765467603-1.2.1.1-gncpdCjp04VwKCdyxdfWodsx3UxulEIN6VkIdsh_UsrXq7hq7_XV34Iw2YiXu4QQW77j0aCdUg7N0EF_l1NPdkvEEuJvpwbGON4TPZ8Xu3WF2GGcTGC_yoLi4HYfbFNchMW_J8deH7PijRq6ChdWEny9oURw779pjqJGmIJbzllN0ztHD7KmpHINcU.MKtRXQsU730dfeqmsPRp2admZsM2ag5.sO9VTpZhSfFZcaR0' \
+  -H 'origin: https://tdac.immigration.go.th' \
+  -H 'pragma: no-cache' \
+  -H 'priority: u=1' \
+  -H 'sec-ch-ua: "Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'sec-fetch-dest: script' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36'
+
+  curl 'https://tdac.immigration.go.th/arrival-card/assets/styles/font/woff/OpenSans.ttf' \
+  -H 'accept: */*' \
+  -H 'accept-language: en-US,en;q=0.9' \
+  -H 'cache-control: no-cache' \
+  -b 'cf_clearance=YbXUEJf9BxsJNfccJS5HpgoXwbnv1RnLlrq9WLsjjSk-1765467603-1.2.1.1-gncpdCjp04VwKCdyxdfWodsx3UxulEIN6VkIdsh_UsrXq7hq7_XV34Iw2YiXu4QQW77j0aCdUg7N0EF_l1NPdkvEEuJvpwbGON4TPZ8Xu3WF2GGcTGC_yoLi4HYfbFNchMW_J8deH7PijRq6ChdWEny9oURw779pjqJGmIJbzllN0ztHD7KmpHINcU.MKtRXQsU730dfeqmsPRp2admZsM2ag5.sO9VTpZhSfFZcaR0' \
+  -H 'origin: https://tdac.immigration.go.th' \
+  -H 'pragma: no-cache' \
+  -H 'priority: u=0' \
+  -H 'referer: https://tdac.immigration.go.th/arrival-card/assets/styles/font/OpenSans.css' \
+  -H 'sec-ch-ua: "Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'sec-fetch-dest: font' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36'

