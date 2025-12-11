@@ -28,13 +28,13 @@ go run cmd/letgo/main.go
 **Build for Linux:**
 ```bash
 # On Linux/Mac (Bash)
-GOOS=linux GOARCH=amd64 go build -o letgo cmd/letgo/main.go
+GOOS=linux GOARCH=amd64 go build -o letgo-amd64 cmd/letgo/main.go
 ```
 
 **Build for Linux on Windows:**
 ```powershell
 # On Windows (PowerShell)
-$env:GOOS="linux"; $env:GOARCH="amd64"; go build -o letgo cmd/letgo/main.go
+$env:GOOS="linux"; $env:GOARCH="amd64"; go build -o letgo-amd64 cmd/letgo/main.go
 ```
 
 **Build for Windows:**
