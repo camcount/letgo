@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/letgo/proxy"
+	proxyscrape "github.com/letgo/proxy-scrape"
 )
 
 // scrapeProxies handles the proxy scraping menu option
@@ -20,8 +20,19 @@ func (m *Menu) scrapeProxies() {
 	fmt.Println("\n[Proxy Scraper]")
 	fmt.Println("This will scrape proxies from multiple free sources.")
 
+	// Backup existing validated proxies and prepare for new scrape
+	fmt.Println("\n[Step 1/3] Backing up existing validated proxies...")
+	backedUp, err := proxyscrape.BackupAndPrepareProxies()
+	if err != nil {
+		fmt.Printf("Warning: Could not backup existing proxies: %v\n", err)
+	} else if backedUp > 0 {
+		fmt.Printf("✓ Backed up %d validated proxies from proxy/proxy.txt\n", backedUp)
+	} else {
+		fmt.Println("No existing validated proxies to backup.")
+	}
+
 	// Get threads configuration
-	fmt.Print("Enter Max Threads (default: 50): ")
+	fmt.Print("\nEnter Max Threads (default: 50): ")
 	threadsStr, _ := reader.ReadString('\n')
 	threadsStr = strings.TrimSpace(threadsStr)
 	maxThreads := 50
@@ -43,7 +54,7 @@ func (m *Menu) scrapeProxies() {
 	}
 
 	// Create scraper config
-	config := proxy.ProxyScraperConfig{
+	config := proxyscrape.ProxyScraperConfig{
 		MaxThreads: maxThreads,
 		Timeout:    timeout,
 		OnProgress: func(scraped, total int, percentage float64) {
@@ -51,8 +62,8 @@ func (m *Menu) scrapeProxies() {
 		},
 	}
 
-	fmt.Printf("\nStarting proxy scraping with %d threads...\n", maxThreads)
-	scraper := proxy.New(config)
+	fmt.Printf("\n\n[Step 2/3] Starting proxy scraping with %d threads...\n", maxThreads)
+	scraper := proxyscrape.New(config)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -75,7 +86,7 @@ func (m *Menu) scrapeProxies() {
 
 	// Remove duplicates
 	fmt.Println("Removing duplicates...")
-	uniqueProxies := proxy.RemoveDuplicates(results)
+	uniqueProxies := proxyscrape.RemoveDuplicates(results)
 	duplicatesRemoved := len(results) - len(uniqueProxies)
 	fmt.Printf("Removed %d duplicates. Total unique proxies: %d\n", duplicatesRemoved, len(uniqueProxies))
 
@@ -90,14 +101,23 @@ func (m *Menu) scrapeProxies() {
 		fmt.Printf("  %s: %d\n", strings.ToUpper(protocol), count)
 	}
 
-	// Write to file
-	fmt.Println("\nSaving proxies to proxy/raw-proxy.txt...")
+	// Merge with existing proxies and deduplicate
+	fmt.Println("\n[Step 3/3] Merging with backed-up proxies and removing duplicates...")
 	if err := m.writeProxiesToFile(uniqueProxies, "proxy/raw-proxy.txt"); err != nil {
 		fmt.Printf("Error: Failed to save proxies: %v\n", err)
 		return
 	}
 
-	fmt.Println("✓ Proxies saved successfully!")
+	// Now merge and deduplicate
+	originalCount, uniqueCount, err := proxyscrape.MergeAndDeduplicateProxies()
+	if err != nil {
+		fmt.Printf("Warning: Could not merge and deduplicate: %v\n", err)
+	} else if originalCount > 0 {
+		fmt.Printf("✓ Merged proxies: %d total → %d unique (%d duplicates removed)\n",
+			originalCount, uniqueCount, originalCount-uniqueCount)
+	}
+
+	fmt.Println("\n✓ All proxies saved to proxy/raw-proxy.txt!")
 	fmt.Println("\nNext step: Use 'Validate Proxies' to test which proxies are working.")
 }
 
@@ -164,20 +184,20 @@ func (m *Menu) validateProxies() {
 	var remainingCount = int32(len(proxies))
 
 	// Create validator config with incremental writing and real-time removal
-	config := proxy.ProxyScraperConfig{
+	config := proxyscrape.ProxyScraperConfig{
 		MaxThreads: maxThreads,
 		Timeout:    timeout,
 		OnProgress: func(validated, total int, percentage float64) {
 			fmt.Printf("\r[Validating] Progress: [%d/%d] %.1f%% | Valid: %d | Remaining in raw-proxy.txt: %d",
 				validated, total, percentage, atomic.LoadInt32(&validCount), atomic.LoadInt32(&remainingCount))
 		},
-		OnValidProxy: func(p proxy.ProxyResult) {
+		OnValidProxy: func(p proxyscrape.ProxyResult) {
 			// Write valid proxy immediately
 			if err := m.appendProxyToFile(p, "proxy/proxy.txt"); err == nil {
 				atomic.AddInt32(&validCount, 1)
 			}
 		},
-		OnProxyValidated: func(p proxy.ProxyResult) {
+		OnProxyValidated: func(p proxyscrape.ProxyResult) {
 			// Remove validated proxy from raw-proxy.txt immediately (whether valid or not)
 			if err := m.removeProxyFromRawFile(p); err == nil {
 				atomic.AddInt32(&remainingCount, -1)
@@ -190,7 +210,7 @@ func (m *Menu) validateProxies() {
 	fmt.Println("Validated proxies will be removed from proxy/raw-proxy.txt in real-time.")
 	fmt.Println("This may take a while depending on the number of proxies...")
 
-	validator := proxy.NewValidator(config)
+	validator := proxyscrape.NewValidator(config)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -238,14 +258,14 @@ func (m *Menu) validateProxies() {
 }
 
 // loadProxiesFromFile loads proxies from a file
-func loadProxiesFromFile(filename string) ([]proxy.ProxyResult, error) {
+func loadProxiesFromFile(filename string) ([]proxyscrape.ProxyResult, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	var proxies []proxy.ProxyResult
+	var proxies []proxyscrape.ProxyResult
 	scanner := bufio.NewScanner(file)
 
 	for scanner.Scan() {
@@ -268,7 +288,7 @@ func loadProxiesFromFile(filename string) ([]proxy.ProxyResult, error) {
 			continue
 		}
 
-		proxies = append(proxies, proxy.ProxyResult{
+		proxies = append(proxies, proxyscrape.ProxyResult{
 			Protocol: protocol,
 			Host:     hostPortParts[0],
 			Port:     hostPortParts[1],
@@ -332,7 +352,7 @@ func (m *Menu) clearProxyFile(filename string) error {
 }
 
 // appendProxyToFile appends a single proxy to the file (thread-safe)
-func (m *Menu) appendProxyToFile(p proxy.ProxyResult, filename string) error {
+func (m *Menu) appendProxyToFile(p proxyscrape.ProxyResult, filename string) error {
 	m.resultMutex.Lock()
 	defer m.resultMutex.Unlock()
 
@@ -350,7 +370,7 @@ func (m *Menu) appendProxyToFile(p proxy.ProxyResult, filename string) error {
 }
 
 // removeProxyFromRawFile removes a validated proxy from raw-proxy.txt (thread-safe)
-func (m *Menu) removeProxyFromRawFile(p proxy.ProxyResult) error {
+func (m *Menu) removeProxyFromRawFile(p proxyscrape.ProxyResult) error {
 	m.resultMutex.Lock()
 	defer m.resultMutex.Unlock()
 

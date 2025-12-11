@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/letgo/proxy"
+	"github.com/letgo/proxy-scrape"
 	"github.com/letgo/scanner"
 	"github.com/letgo/secretscanner"
 )
