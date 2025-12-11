@@ -409,10 +409,10 @@ func (m *Menu) ddosAttack() {
 	fmt.Println("\n===== DDoS Configuration =====")
 
 	// Ask if using proxy
-	fmt.Print("\nUse proxy for attacks? (y/n, default: n): ")
+	fmt.Print("\nUse proxy for attacks? (y/n, default: y): ")
 	useProxyStr, _ := reader.ReadString('\n')
 	useProxyStr = strings.TrimSpace(strings.ToLower(useProxyStr))
-	useProxy := useProxyStr == "y" || useProxyStr == "yes"
+	useProxy := useProxyStr != "n" && useProxyStr != "no"
 
 	var proxyList []string
 	var rotateProxy bool
@@ -501,6 +501,18 @@ func (m *Menu) ddosAttack() {
 		}
 	}
 
+	// Custom User Agents
+	fmt.Print("Use custom user agents from user-agent.txt? (y/n, default: y): ")
+	useCustomAgentsStr, _ := reader.ReadString('\n')
+	useCustomAgentsStr = strings.TrimSpace(strings.ToLower(useCustomAgentsStr))
+	useCustomUserAgents := useCustomAgentsStr != "n" && useCustomAgentsStr != "no"
+
+	if useCustomUserAgents {
+		fmt.Println("✓ Custom user agents enabled (user-agent.txt)")
+	} else {
+		fmt.Println("✓ Using built-in user agents")
+	}
+
 	// Connection reuse
 	fmt.Print("Reuse connections? (y/n, default: y): ")
 	reuseStr, _ := reader.ReadString('\n')
@@ -530,6 +542,11 @@ func (m *Menu) ddosAttack() {
 		config.UseProxy = useProxy
 		config.ProxyList = proxyList
 		config.RotateProxy = rotateProxy
+		// Apply custom user agents settings
+		config.UseCustomUserAgents = useCustomUserAgents
+		if useCustomUserAgents {
+			config.UserAgentFilePath = "user-agent.txt"
+		}
 	}
 
 	// Summary before starting
@@ -547,6 +564,11 @@ func (m *Menu) ddosAttack() {
 	}
 	fmt.Printf("Reuse Connections: %v\n", reuseConnections)
 	fmt.Printf("Request Timeout:   %s\n", timeout)
+	if useCustomUserAgents {
+		fmt.Printf("User Agents:       Custom (from user-agent.txt)\n")
+	} else {
+		fmt.Printf("User Agents:       Built-in\n")
+	}
 	if useProxy {
 		fmt.Printf("Proxy:             Enabled (%d proxies, rotation: %v)\n", len(proxyList), rotateProxy)
 	} else {
