@@ -1,0 +1,129 @@
+# DDoS Attack Configuration Template
+# This file defines attack-specific parameters for DDoS attacks.
+# Target URL, HTTP Method, Headers, Body, and Content-Type are obtained from cURL config files.
+# Uncomment and modify parameters as needed. Commented parameters use default values.
+
+# ==============================================================================
+# ATTACK MODE (Required)
+# ==============================================================================
+
+# Attack mode: flood, slowloris, mixed, http2-stream-flood, rudy
+AttackMode=flood
+
+# ==============================================================================
+# PERFORMANCE SETTINGS
+# ==============================================================================
+
+# Number of concurrent threads/workers (default: 500)
+MaxThreads=500
+
+# Attack duration in seconds (default: 60)
+DurationSeconds=60
+
+# Request timeout in seconds (default: 5)
+TimeoutSeconds=5
+
+# Requests per second limit (0 = unlimited, default: 0)
+RateLimit=0
+
+# ==============================================================================
+# HTTP CONFIGURATION
+# ==============================================================================
+
+# Note: Content-Type, Body, and HTTP Headers are obtained from cURL config.
+# These settings below control connection behavior only.
+
+# Follow HTTP redirects (true/false, default: true)
+FollowRedirects=true
+
+# Reuse TCP connections for multiple requests (true/false, default: true)
+ReuseConnections=true
+
+# ==============================================================================
+# PROXY CONFIGURATION
+# ==============================================================================
+
+# Enable proxy usage (true/false, default: false)
+UseProxy=false
+
+# Proxy list file path (one proxy per line, format: http://ip:port or https://ip:port)
+# ProxyListFile=proxy/proxy.txt
+
+# Rotate through proxies for each request (true/false, default: false)
+RotateProxy=false
+
+# ==============================================================================
+# USER AGENT CONFIGURATION
+# ==============================================================================
+
+# Use custom user agents from file (true/false, default: true)
+UseCustomUserAgents=true
+
+# Custom user agents file path (one per line, default: user-agent.txt)
+# UserAgentFilePath=user-agent.txt
+
+# ==============================================================================
+# SLOWLORIS SPECIFIC SETTINGS
+# ==============================================================================
+# Only applicable when AttackMode=slowloris or AttackMode=mixed
+
+# Delay between sending partial HTTP headers in seconds (default: 10)
+# SlowlorisDelaySeconds=10
+
+# ==============================================================================
+# RUDY (R-U-Dead-Yet) SPECIFIC SETTINGS
+# ==============================================================================
+# Only applicable when AttackMode=rudy
+
+# Delay between sending bytes in seconds (default: 10)
+# RUDYDelaySeconds=10
+
+# Size of POST body for RUDY attack in bytes (default: 1048576 = 1MB)
+# RUDYBodySize=1048576
+
+# ==============================================================================
+# HTTP/2 CONFIGURATION
+# ==============================================================================
+
+# Enable HTTP/2 support (true/false, default: false)
+# Only works with HTTPS targets
+UseHTTP2=false
+
+# Maximum HTTP/2 streams per connection (default: 100)
+# MaxStreamsPerConn=100
+
+# ==============================================================================
+# ADVANCED HTTP SETTINGS
+# ==============================================================================
+
+# Enable HTTP pipelining (true/false, default: false)
+UsePipelining=false
+
+# Use adaptive rate limiting based on server response (true/false, default: false)
+AdaptiveRateLimit=false
+
+# ==============================================================================
+# TLS/SSL ATTACK CONFIGURATION
+# ==============================================================================
+
+# Enable TLS attack combinations (true/false, default: false)
+UseTLSAttack=false
+
+# Force TLS on HTTP URLs (true/false, default: false)
+# ForceTLS=false
+
+# Enable TLS Handshake Flood (true/false, default: false)
+# Initiates many TLS handshakes without completing HTTP requests
+# TLSHandshakeFlood=false
+
+# Enable TLS Renegotiation attacks (true/false, default: false)
+# Force TLS renegotiation on connections
+# TLSRenegotiation=false
+
+# Minimum TLS version: 0x0301 (TLS 1.0), 0x0302 (TLS 1.1), 0x0303 (TLS 1.2), 0x0304 (TLS 1.3)
+# 0 = use default (default: 0)
+# TLSMinVersion=0x0303
+
+# Maximum TLS version: 0x0301 (TLS 1.0), 0x0302 (TLS 1.1), 0x0303 (TLS 1.2), 0x0304 (TLS 1.3)
+# 0 = use default (default: 0)
+# TLSMaxVersion=0x0304
