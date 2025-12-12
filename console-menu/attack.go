@@ -14,6 +14,7 @@ import (
 	"github.com/letgo/cracker"
 	"github.com/letgo/curlparser"
 	"github.com/letgo/ddos"
+	"github.com/letgo/ddos-scanner"
 	"github.com/letgo/pathtraversal"
 )
 
@@ -388,12 +389,73 @@ func (m *Menu) ddosAttack() {
 		fmt.Printf("✓ Attack Mode: %s\n", templateConfig.AttackMode)
 	}
 
-	// Ask for cURL file path
-	fmt.Print("\nEnter cURL-DDOS config file path (default: cURL-DDOS.txt): ")
-	curlFile, _ := reader.ReadString('\n')
-	curlFile = strings.TrimSpace(curlFile)
-	if curlFile == "" {
-		curlFile = "cURL-DDOS.txt"
+	// List available target files from ddos-targets folder
+	fmt.Println("\n===== Available DDoS Target Files =====")
+	targetFiles, err := ddosscanner.ListDDOSTargetFiles()
+	if err != nil {
+		fmt.Printf("Warning: Could not list target files: %v\n", err)
+		targetFiles = []string{}
+	}
+
+	// Check for default file
+	defaultFile := filepath.Join("ddos-targets", "cURL-DDOS.txt")
+	hasDefault := false
+	for _, file := range targetFiles {
+		if file == defaultFile {
+			hasDefault = true
+			break
+		}
+	}
+
+	var curlFile string
+	if len(targetFiles) == 0 {
+		fmt.Println("No target files found in ddos-targets/ folder.")
+		fmt.Println("Please run 'Scan Target for DDoS cURLs' first or create target files manually.")
+		fmt.Print("\nEnter cURL-DDOS config file path (or press Enter to cancel): ")
+		curlFileInput, _ := reader.ReadString('\n')
+		curlFile = strings.TrimSpace(curlFileInput)
+		if curlFile == "" {
+			return
+		}
+	} else {
+		// Display numbered list
+		fmt.Println("Select a target file:")
+		for i, file := range targetFiles {
+			fileName := filepath.Base(file)
+			marker := ""
+			if file == defaultFile {
+				marker = " (default)"
+			}
+			fmt.Printf("  [%d] %s%s\n", i+1, fileName, marker)
+		}
+		fmt.Print("\nEnter file number (or press Enter for default): ")
+		fileChoice, _ := reader.ReadString('\n')
+		fileChoice = strings.TrimSpace(fileChoice)
+
+		if fileChoice == "" {
+			// Use default if available, otherwise first file
+			if hasDefault {
+				curlFile = defaultFile
+			} else {
+				curlFile = targetFiles[0]
+			}
+		} else {
+			fileNum, err := strconv.Atoi(fileChoice)
+			if err != nil || fileNum < 1 || fileNum > len(targetFiles) {
+				fmt.Printf("Invalid file number. Using default: %s\n", defaultFile)
+				if hasDefault {
+					curlFile = defaultFile
+				} else if len(targetFiles) > 0 {
+					curlFile = targetFiles[0]
+				} else {
+					fmt.Println("Error: No valid target files available.")
+					return
+				}
+			} else {
+				curlFile = targetFiles[fileNum-1]
+			}
+		}
+		fmt.Printf("✓ Selected: %s\n", filepath.Base(curlFile))
 	}
 
 	// Load cURL configurations from file

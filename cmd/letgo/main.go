@@ -3,10 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	consolemenu "github.com/letgo/console-menu"
 	"github.com/letgo/cracker"
+	"github.com/letgo/ddos-scanner"
 )
 
 // List of required .txt files
@@ -59,6 +61,28 @@ func ensureTxtFilesExist() {
 				f.Close()
 				fmt.Printf("Created missing file: %s\n", file)
 			}
+		}
+	}
+}
+
+// Ensure DDoS targets directory exists and move cURL-DDOS.txt if needed
+func ensureDDOSTargetsExist() {
+	// Create ddos-targets directory
+	if err := ddosscanner.EnsureDDOSTargetsDir(); err != nil {
+		fmt.Printf("Error creating ddos-targets directory: %v\n", err)
+		return
+	}
+
+	// Move cURL-DDOS.txt from root to ddos-targets if it exists
+	if err := ddosscanner.MoveCURLDDOSFile(); err != nil {
+		// Don't show error if file doesn't exist (that's fine)
+		if _, statErr := os.Stat("cURL-DDOS.txt"); statErr == nil {
+			fmt.Printf("Warning: Could not move cURL-DDOS.txt: %v\n", err)
+		}
+	} else {
+		// Check if file was actually moved (it existed and was moved)
+		if _, err := os.Stat(filepath.Join("ddos-targets", "cURL-DDOS.txt")); err == nil {
+			fmt.Println("Moved cURL-DDOS.txt to ddos-targets/")
 		}
 	}
 }
@@ -249,6 +273,9 @@ UseTLSAttack=false
 func main() {
 	// Ensure all required .txt files exist
 	ensureTxtFilesExist()
+
+	// Ensure DDoS targets directory exists and move cURL-DDOS.txt if needed
+	ensureDDOSTargetsExist()
 
 	// Ensure DDoS templates directory and base template exist
 	ensureDDoSTemplatesExist()
