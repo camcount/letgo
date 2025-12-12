@@ -29,14 +29,14 @@ func (m *Menu) Display() {
 	fmt.Println("[Scan]")
 	fmt.Println("  1) Scan for Login Endpoints")
 	fmt.Println("  2) Scan for Secrets/Env/Tokens")
+	fmt.Println("  3) Scan Path Traversal (LFI/RFI)")
 	fmt.Println("[Generate]")
-	fmt.Println("  3) Generate User List")
-	fmt.Println("  4) Generate Password List")
-	fmt.Println("  5) Generate User Agents")
+	fmt.Println("  4) Generate User List")
+	fmt.Println("  5) Generate Password List")
+	fmt.Println("  6) Generate User Agents")
 	fmt.Println("[Attack]")
-	fmt.Println("  6) Attack Brute force with cURL")
-	fmt.Println("  7) DDoS Attack (cURL)")
-	fmt.Println("  8) Path Traversal Test (LFI/RFI)")
+	fmt.Println("  7) Attack Brute force with cURL")
+	fmt.Println("  8) DDoS Attack (cURL)")
 	fmt.Println("[Proxy]")
 	fmt.Println("  9) Scrape Proxies")
 	fmt.Println("  10) Validate Proxies")
@@ -56,17 +56,17 @@ func (m *Menu) Process() bool {
 	case "2":
 		m.scanSecrets()
 	case "3":
-		m.generateUserList()
-	case "4":
-		m.generatePasswordList()
-	case "5":
-		m.generateUserAgents()
-	case "6":
-		m.attackWithCurl()
-	case "7":
-		m.ddosAttack()
-	case "8":
 		m.pathTraversalAttack()
+	case "4":
+		m.generateUserList()
+	case "5":
+		m.generatePasswordList()
+	case "6":
+		m.generateUserAgents()
+	case "7":
+		m.attackWithCurl()
+	case "8":
+		m.ddosAttack()
 	case "9":
 		m.scrapeProxies()
 	case "10":

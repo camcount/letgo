@@ -1114,7 +1114,7 @@ func (m *Menu) editDDoSConfig(config *ddos.DDoSConfig, reader *bufio.Reader) *dd
 func (m *Menu) pathTraversalAttack() {
 	reader := bufio.NewReader(os.Stdin)
 
-	fmt.Println("\n===== Path Traversal Test (LFI/RFI) =====")
+	fmt.Println("\n===== Scan Path Traversal (LFI/RFI) =====")
 	fmt.Println("\n[WARNING] This tool is for authorized security testing and educational purposes only.")
 	fmt.Println("Unauthorized access to computer systems is illegal.")
 

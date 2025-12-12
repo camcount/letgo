@@ -250,10 +250,25 @@ func (pt *PathTraversal) monitorProgress(ctx context.Context) {
 
 // reportProgress reports current statistics
 func (pt *PathTraversal) reportProgress() {
-	pt.statsMu.Lock()
-	defer pt.statsMu.Unlock()
+	pt.statsMu.RLock()
+	elapsed := time.Since(pt.startTime)
+	stats := Stats{
+		PayloadsTested:       pt.payloadsTested.Load(),
+		VulnerabilitiesFound: pt.vulnFound.Load(),
+		TotalParameters:      pt.stats.TotalParameters,
+		TotalPayloads:        pt.stats.TotalPayloads,
+		ParametersScanned:    pt.stats.ParametersScanned,
+		ElapsedTime:          elapsed,
+		StartTime:            pt.startTime,
+		LastUpdate:           time.Now(),
+	}
+	// Calculate average response time
+	if pt.payloadsTested.Load() > 0 {
+		avgNano := atomic.LoadInt64(&pt.totalResponseTime) / pt.payloadsTested.Load()
+		stats.AvgResponseTime = time.Duration(avgNano)
+	}
+	pt.statsMu.RUnlock()
 
-	stats := pt.GetStats()
 	if pt.config.OnProgress != nil {
 		pt.config.OnProgress(stats)
 	}
@@ -287,8 +302,8 @@ func (pt *PathTraversal) Stop() {
 
 // GetStats returns current statistics
 func (pt *PathTraversal) GetStats() Stats {
-	pt.statsMu.Lock()
-	defer pt.statsMu.Unlock()
+	pt.statsMu.RLock()
+	defer pt.statsMu.RUnlock()
 
 	elapsed := time.Since(pt.startTime)
 
