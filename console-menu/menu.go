@@ -25,7 +25,7 @@ func New(config *cracker.AttackConfig) *Menu {
 
 // Display shows the main menu
 func (m *Menu) Display() {
-	fmt.Println("===== Password Cracker Menu ======")
+	fmt.Println("===== Security Testing Menu ======")
 	fmt.Println("[Scan]")
 	fmt.Println("  1) Scan for Login Endpoints")
 	fmt.Println("  2) Scan for Secrets/Env/Tokens")
@@ -36,11 +36,12 @@ func (m *Menu) Display() {
 	fmt.Println("[Attack]")
 	fmt.Println("  6) Attack Brute force with cURL")
 	fmt.Println("  7) DDoS Attack (cURL)")
+	fmt.Println("  8) Path Traversal Test (LFI/RFI)")
 	fmt.Println("[Proxy]")
-	fmt.Println("  8) Scrape Proxies")
-	fmt.Println("  9) Validate Proxies")
-	fmt.Println("  10) Exit")
-	fmt.Print("Choose an option [1-10]: ")
+	fmt.Println("  9) Scrape Proxies")
+	fmt.Println("  10) Validate Proxies")
+	fmt.Println("  11) Exit")
+	fmt.Print("Choose an option [1-11]: ")
 }
 
 // Process handles the user's menu choice
@@ -65,10 +66,12 @@ func (m *Menu) Process() bool {
 	case "7":
 		m.ddosAttack()
 	case "8":
-		m.scrapeProxies()
+		m.pathTraversalAttack()
 	case "9":
-		m.validateProxies()
+		m.scrapeProxies()
 	case "10":
+		m.validateProxies()
+	case "11":
 		fmt.Println("Exiting...")
 		return false
 	default:

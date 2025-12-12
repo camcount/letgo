@@ -14,6 +14,7 @@ import (
 	"github.com/letgo/cracker"
 	"github.com/letgo/curlparser"
 	"github.com/letgo/ddos"
+	"github.com/letgo/pathtraversal"
 )
 
 // attackWithCurl performs an attack using cURL configuration from a file
@@ -1106,5 +1107,135 @@ func (m *Menu) editDDoSConfig(config *ddos.DDoSConfig, reader *bufio.Reader) *dd
 	default:
 		fmt.Println("Invalid choice")
 		return m.editDDoSConfig(config, reader)
+	}
+}
+
+// pathTraversalAttack performs path traversal/LFI/RFI testing
+func (m *Menu) pathTraversalAttack() {
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Println("\n===== Path Traversal Test (LFI/RFI) =====")
+	fmt.Println("\n[WARNING] This tool is for authorized security testing and educational purposes only.")
+	fmt.Println("Unauthorized access to computer systems is illegal.")
+
+	// Get target URL
+	fmt.Print("\nEnter target URL (e.g., http://example.com/download.php): ")
+	targetURL, _ := reader.ReadString('\n')
+	targetURL = strings.TrimSpace(targetURL)
+
+	if targetURL == "" {
+		fmt.Println("Target URL required")
+		return
+	}
+
+	// Normalize URL
+	targetURL = pathtraversal.NormalizeURL(targetURL)
+
+	// Get number of threads
+	fmt.Print("Number of threads (default: 10): ")
+	threadsStr, _ := reader.ReadString('\n')
+	threadsStr = strings.TrimSpace(threadsStr)
+	threads := 10
+	if threadsStr != "" {
+		if t, err := strconv.Atoi(threadsStr); err == nil && t > 0 {
+			threads = t
+		}
+	}
+
+	// Get timeout
+	fmt.Print("Timeout in seconds (default: 10): ")
+	timeoutStr, _ := reader.ReadString('\n')
+	timeoutStr = strings.TrimSpace(timeoutStr)
+	timeout := 10 * time.Second
+	if timeoutStr != "" {
+		if t, err := strconv.Atoi(timeoutStr); err == nil && t > 0 {
+			timeout = time.Duration(t) * time.Second
+		}
+	}
+
+	// Auto-discover parameters
+	fmt.Println("\n[*] Auto-discovering parameters from URL...")
+	params := pathtraversal.DiscoverParameters(targetURL)
+
+	if len(params) == 0 {
+		fmt.Println("[!] No parameters found in URL, using common parameter names")
+		params = pathtraversal.CommonParameters()
+	}
+
+	fmt.Printf("[✓] Found %d parameters to test: %v\n\n", len(params), params)
+
+	// Create config with progress callback
+	lastUpdate := time.Now()
+	progressMutex := sync.Mutex{}
+
+	config := pathtraversal.PathTraversalConfig{
+		TargetURL:      targetURL,
+		MaxThreads:     threads,
+		Timeout:        timeout,
+		TestParameters: params,
+		OnProgress: func(stats pathtraversal.Stats) {
+			progressMutex.Lock()
+			defer progressMutex.Unlock()
+
+			// Display progress every 100ms minimum
+			if time.Since(lastUpdate) > 100*time.Millisecond {
+				percentage := 0
+				if stats.TotalParameters > 0 {
+					percentage = int((float64(stats.ParametersScanned) / float64(stats.TotalParameters)) * 100)
+				}
+
+				fmt.Printf("\r[*] Progress: %d%% | Tested: %-7d | Found: %-4d | Time: %v",
+					percentage, stats.PayloadsTested, stats.VulnerabilitiesFound, stats.ElapsedTime)
+				os.Stdout.Sync() // Force flush
+				lastUpdate = time.Now()
+			}
+		},
+	}
+
+	// Create attack instance
+	attack := pathtraversal.New(config)
+
+	// Run the attack
+	fmt.Println("\n[*] Starting path traversal scan...")
+	fmt.Println("[*] Testing payloads for: Unix paths, Windows paths, web configs, and bypass techniques")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := attack.Start(ctx)
+	if err != nil {
+		fmt.Printf("\n[!] Error: %v\n", err)
+		return
+	}
+
+	// Get results
+	results := attack.GetResults()
+	stats := attack.GetStats()
+	scanDuration := stats.ElapsedTime
+
+	// Display formatted summary
+	fmt.Println(pathtraversal.FormatSummary(stats, results, scanDuration))
+
+	if len(results) > 0 {
+		// Display formatted results
+		fmt.Println(pathtraversal.FormatResults(results))
+
+		// Save to file
+		outputFile := filepath.Join("results.txt")
+		fmt.Printf("\nSaving results to %s...\n", outputFile)
+
+		// Append to results file
+		f, err := os.OpenFile(outputFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err == nil {
+			fmt.Fprintf(f, "\n===== PATH TRAVERSAL RESULTS =====\n")
+			fmt.Fprintf(f, "Target: %s\n", targetURL)
+			fmt.Fprintf(f, "Scan Time: %s\n", time.Now().Format(time.RFC3339))
+			fmt.Fprintf(f, "Total Vulnerabilities: %d\n", len(results))
+			fmt.Fprintf(f, "%s\n", pathtraversal.FormatResults(results))
+			f.Close()
+			fmt.Println("[✓] Results saved to results.txt")
+		}
+	} else {
+		fmt.Println("[*] No vulnerabilities detected")
 	}
 }
