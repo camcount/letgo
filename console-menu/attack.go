@@ -425,11 +425,13 @@ func (m *Menu) ddosAttack() {
 			return
 		}
 	} else {
-		// Display folder selection with cURL-DDOS.txt as first option if it exists
+		// Display folder selection with cURL-DDOS.txt as first option if it exists (only in manual config mode)
 		fmt.Println("Select a site folder:")
 		optionNum := 1
 		
-		if hasDefaultFile {
+		// Only show cURL-DDOS.txt option in manual configuration mode
+		showDefaultFile := configChoice == "2" && hasDefaultFile
+		if showDefaultFile {
 			fmt.Printf("  [%d] cURL-DDOS.txt (default)\n", optionNum)
 			optionNum++
 		}
@@ -444,8 +446,8 @@ func (m *Menu) ddosAttack() {
 		folderChoice = strings.TrimSpace(folderChoice)
 		
 		if folderChoice == "" {
-			// Use default (cURL-DDOS.txt) if available, otherwise first folder
-			if hasDefaultFile {
+			// Use default (cURL-DDOS.txt) if available in manual mode, otherwise first folder
+			if showDefaultFile {
 				selectedFolder = "" // Root folder for default file
 			} else if len(folders) > 0 {
 				selectedFolder = folders[0]
@@ -457,7 +459,7 @@ func (m *Menu) ddosAttack() {
 			folderNum, err := strconv.Atoi(folderChoice)
 			if err != nil || folderNum < 1 {
 				// Invalid input, use default
-				if hasDefaultFile {
+				if showDefaultFile {
 					selectedFolder = ""
 				} else if len(folders) > 0 {
 					fmt.Printf("Invalid folder number. Using first folder: %s\n", folders[0])
@@ -468,7 +470,7 @@ func (m *Menu) ddosAttack() {
 				}
 			} else {
 				// Calculate which option was selected
-				if hasDefaultFile {
+				if showDefaultFile {
 					if folderNum == 1 {
 						selectedFolder = "" // Root folder for default file
 					} else if folderNum <= len(folders)+1 {
@@ -526,94 +528,40 @@ func (m *Menu) ddosAttack() {
 					fmt.Printf("✓ Selected: %s\n", filepath.Base(curlFile))
 				}
 			} else {
-				// Root folder - check for matching files or use default cURL-DDOS.txt
-				if hasDefaultFile {
-					// Check if default file matches template
-					folderPath := filepath.Join(dataDir, "ddos-targets")
-					matchingFiles, err := ddosscanner.GetFilesMatchingTemplate(folderPath, string(templateConfig.AttackMode))
-					if err != nil {
-						fmt.Printf("Error reading folder: %v\n", err)
-						return
-					}
+				// Root folder - check for matching files (template mode doesn't use default file)
+				// In template mode, cURL-DDOS.txt is not available, so only check for matching files
+				folderPath := filepath.Join(dataDir, "ddos-targets")
+				matchingFiles, err := ddosscanner.GetFilesMatchingTemplate(folderPath, string(templateConfig.AttackMode))
+				if err != nil {
+					fmt.Printf("Error reading folder: %v\n", err)
+					return
+				}
 
-					// Check if default file is in matching files
-					defaultInMatches := false
-					for _, file := range matchingFiles {
-						if file == defaultFile {
-							defaultInMatches = true
-							break
-						}
-					}
-
-					if defaultInMatches && len(matchingFiles) == 1 {
-						// Default file matches and is the only match
-						curlFile = defaultFile
-						fmt.Printf("\n✓ Auto-selected matching file: %s\n", filepath.Base(curlFile))
-					} else if len(matchingFiles) == 0 {
-						fmt.Printf("\n⚠ No files matching template attack mode '%s' found.\n", templateConfig.AttackMode)
-						fmt.Println("Please select another folder or use manual configuration.")
-						return
-					} else if len(matchingFiles) == 1 {
-						curlFile = matchingFiles[0]
-						fmt.Printf("\n✓ Auto-selected matching file: %s\n", filepath.Base(curlFile))
-					} else {
-						// Multiple matches, let user select
-						fmt.Printf("\n===== Multiple Matching Files (Attack Mode: %s) =====", templateConfig.AttackMode)
-						fmt.Println("\nSelect a file:")
-						for i, file := range matchingFiles {
-							marker := ""
-							if file == defaultFile {
-								marker = " (default)"
-							}
-							fmt.Printf("  [%d] %s%s\n", i+1, filepath.Base(file), marker)
-						}
-						fmt.Print("\nEnter file number: ")
-						fileChoice, _ := reader.ReadString('\n')
-						fileChoice = strings.TrimSpace(fileChoice)
-						fileNum, err := strconv.Atoi(fileChoice)
-						if err != nil || fileNum < 1 || fileNum > len(matchingFiles) {
-							fmt.Printf("Invalid file number. Using first file: %s\n", filepath.Base(matchingFiles[0]))
-							curlFile = matchingFiles[0]
-						} else {
-							curlFile = matchingFiles[fileNum-1]
-						}
-						fmt.Printf("✓ Selected: %s\n", filepath.Base(curlFile))
-					}
+				if len(matchingFiles) == 0 {
+					fmt.Printf("\n⚠ No files matching template attack mode '%s' found in root folder.\n", templateConfig.AttackMode)
+					fmt.Println("Please select another folder or use manual configuration.")
+					return
+				} else if len(matchingFiles) == 1 {
+					curlFile = matchingFiles[0]
+					fmt.Printf("\n✓ Auto-selected matching file: %s\n", filepath.Base(curlFile))
 				} else {
-					// No default file, check for matching files in root
-					folderPath := filepath.Join(dataDir, "ddos-targets")
-					matchingFiles, err := ddosscanner.GetFilesMatchingTemplate(folderPath, string(templateConfig.AttackMode))
-					if err != nil {
-						fmt.Printf("Error reading folder: %v\n", err)
-						return
+					// Multiple matches, let user select
+					fmt.Printf("\n===== Multiple Matching Files (Attack Mode: %s) =====", templateConfig.AttackMode)
+					fmt.Println("\nSelect a file:")
+					for i, file := range matchingFiles {
+						fmt.Printf("  [%d] %s\n", i+1, filepath.Base(file))
 					}
-
-					if len(matchingFiles) == 0 {
-						fmt.Printf("\n⚠ No files matching template attack mode '%s' found in root folder.\n", templateConfig.AttackMode)
-						fmt.Println("Please select another folder or use manual configuration.")
-						return
-					} else if len(matchingFiles) == 1 {
+					fmt.Print("\nEnter file number: ")
+					fileChoice, _ := reader.ReadString('\n')
+					fileChoice = strings.TrimSpace(fileChoice)
+					fileNum, err := strconv.Atoi(fileChoice)
+					if err != nil || fileNum < 1 || fileNum > len(matchingFiles) {
+						fmt.Printf("Invalid file number. Using first file: %s\n", filepath.Base(matchingFiles[0]))
 						curlFile = matchingFiles[0]
-						fmt.Printf("\n✓ Auto-selected matching file: %s\n", filepath.Base(curlFile))
 					} else {
-						// Multiple matches, let user select
-						fmt.Printf("\n===== Multiple Matching Files (Attack Mode: %s) =====", templateConfig.AttackMode)
-						fmt.Println("\nSelect a file:")
-						for i, file := range matchingFiles {
-							fmt.Printf("  [%d] %s\n", i+1, filepath.Base(file))
-						}
-						fmt.Print("\nEnter file number: ")
-						fileChoice, _ := reader.ReadString('\n')
-						fileChoice = strings.TrimSpace(fileChoice)
-						fileNum, err := strconv.Atoi(fileChoice)
-						if err != nil || fileNum < 1 || fileNum > len(matchingFiles) {
-							fmt.Printf("Invalid file number. Using first file: %s\n", filepath.Base(matchingFiles[0]))
-							curlFile = matchingFiles[0]
-						} else {
-							curlFile = matchingFiles[fileNum-1]
-						}
-						fmt.Printf("✓ Selected: %s\n", filepath.Base(curlFile))
+						curlFile = matchingFiles[fileNum-1]
 					}
+					fmt.Printf("✓ Selected: %s\n", filepath.Base(curlFile))
 				}
 			}
 		} else {
