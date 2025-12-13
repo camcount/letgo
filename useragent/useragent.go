@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
+	
+	"github.com/letgo/paths"
 )
 
 // SelectionStrategy defines how user agents are selected
@@ -229,8 +232,15 @@ func (u *UserAgentGenerator) GenerateUserAgents(count int) error {
 	// Restore original strategy
 	u.strategy = tempStrategy
 
+	// Ensure data directory exists
+	dataDir := paths.GetDataDir()
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return fmt.Errorf("failed to create data directory: %w", err)
+	}
+
 	// Create/overwrite user-agent.txt file
-	file, err := os.Create("user-agent.txt")
+	filePath := filepath.Join(dataDir, "user-agent.txt")
+	file, err := os.Create(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to create user-agent.txt: %w", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/letgo/proxy-scrape"
@@ -16,7 +17,13 @@ func (m *Menu) writeResult(urlStr, username, password string) error {
 	m.resultMutex.Lock()
 	defer m.resultMutex.Unlock()
 
-	file, err := os.OpenFile("results.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	// Ensure data directory exists
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return fmt.Errorf("failed to create data directory: %w", err)
+	}
+
+	filePath := filepath.Join(dataDir, "results.txt")
+	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open results.txt: %w", err)
 	}
@@ -32,7 +39,13 @@ func (m *Menu) writeResult(urlStr, username, password string) error {
 
 // writeSecretResultsToFile writes secret scan results to a file
 func (m *Menu) writeSecretResultsToFile(results []secretscanner.ScanResult) error {
-	file, err := os.Create("secrets-found.txt")
+	// Ensure data directory exists
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return fmt.Errorf("failed to create data directory: %w", err)
+	}
+
+	filePath := filepath.Join(dataDir, "secrets-found.txt")
+	file, err := os.Create(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
@@ -91,7 +104,13 @@ func (m *Menu) writeSecretResultsToFile(results []secretscanner.ScanResult) erro
 
 // writeValidEndpointsToFile writes valid endpoints to valid-url.txt
 func (m *Menu) writeValidEndpointsToFile(results []scanner.EndpointResult) error {
-	file, err := os.Create("valid-url.txt")
+	// Ensure data directory exists
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return fmt.Errorf("failed to create data directory: %w", err)
+	}
+
+	filePath := filepath.Join(dataDir, "valid-url.txt")
+	file, err := os.Create(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}

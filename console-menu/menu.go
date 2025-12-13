@@ -8,8 +8,11 @@ import (
 	"sync"
 
 	"github.com/letgo/cracker"
+	"github.com/letgo/paths"
 	"github.com/letgo/scanner"
 )
+
+var dataDir = paths.GetDataDir()
 
 // Menu represents the console menu
 type Menu struct {

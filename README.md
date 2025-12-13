@@ -16,31 +16,34 @@ A powerful, multi-threaded password cracking tool with support for HTTP/HTTPS lo
 
 ```bash
 # Build executable
-go build -o letgo cmd/letgo/main.go
+go build -o application/letgo cmd/letgo/main.go
 
 # Run the executable
-./letgo
+./application/letgo
 
 # Or run directly without building
 go run cmd/letgo/main.go
 ```
 
 **Build for Linux:**
+
 ```bash
 # On Linux/Mac (Bash)
-GOOS=linux GOARCH=amd64 go build -o letgo-amd64 cmd/letgo/main.go
+GOOS=linux GOARCH=amd64 go build -o application/letgo-amd64 cmd/letgo/main.go
 ```
 
 **Build for Linux on Windows:**
+
 ```powershell
 # On Windows (PowerShell)
-$env:GOOS="linux"; $env:GOARCH="amd64"; go build -o letgo-amd64 cmd/letgo/main.go
+$env:GOOS="linux"; $env:GOARCH="amd64"; go build -o application/letgo-amd64 cmd/letgo/main.go
 ```
 
 **Build for Windows:**
+
 ```powershell
 # On Windows (PowerShell)
-go build -o letgo.exe cmd/letgo/main.go
+go build -o application/letgo.exe cmd/letgo/main.go
 ```
 
 ## Usage
@@ -48,6 +51,7 @@ go build -o letgo.exe cmd/letgo/main.go
 ### 1. Standard Attack
 
 Attack with a single username and password list:
+
 - Choose option `1` from menu
 - Provide target URL from `valid-url.txt`
 - Enter username and wordlist path
@@ -56,6 +60,7 @@ Attack with a single username and password list:
 ### 2. Multi-User Attack
 
 Attack with multiple usernames:
+
 - Choose option `1` from menu
 - When asked "Use userlist file?", answer `y`
 - Provide userlist path (default: `users.txt`)
@@ -64,6 +69,7 @@ Attack with multiple usernames:
 ### 3. cURL Config Attack
 
 Import configuration from cURL commands:
+
 - Create `cURL-Bruteforce.txt` with your cURL commands
 - Choose option `5` from menu
 - Tool automatically extracts headers, endpoints, and field names
@@ -71,6 +77,7 @@ Import configuration from cURL commands:
 ### 4. Endpoint Scanning
 
 Discover login endpoints:
+
 - Choose option `2` from menu
 - Enter base URL
 - Tool scans for common login endpoints
@@ -78,11 +85,18 @@ Discover login endpoints:
 
 ## File Structure
 
-- `users.txt` - List of usernames (one per line)
-- `passwords.txt` - List of passwords (one per line)
-- `cURL-Bruteforce.txt` - cURL commands for attack configuration
-- `valid-url.txt` - Valid login endpoints (from scanning)
-- `results.txt` - Successful credentials (format: `URL|username|password`)
+All data files are stored in the `application/data/` directory:
+
+- `application/data/users.txt` - List of usernames (one per line)
+- `application/data/passwords.txt` - List of passwords (one per line)
+- `application/data/cURL-Bruteforce.txt` - cURL commands for attack configuration
+- `application/data/valid-url.txt` - Valid login endpoints (from scanning)
+- `application/data/results.txt` - Successful credentials (format: `URL|username|password`)
+- `application/data/proxy/` - Proxy configuration files
+- `application/data/ddos-targets/` - DDoS target configurations
+- `application/data/ddos-templates/` - DDoS attack templates
+
+**Note:** When running the built executable from another location, a `data/` folder will be automatically created next to the executable.
 
 ## Tips for Effective Use
 
@@ -93,12 +107,14 @@ Your attack of **727 users × 100,394 passwords = 72,986,438 combinations** woul
 **Recommendations:**
 
 1. **Reduce scope** - Start small and increase if needed
+
    ```bash
    # Use top 1000 most common passwords first
    head -1000 passwords.txt > passwords-top1k.txt
    ```
 
 2. **Targeted userlist** - Focus on likely usernames
+
    ```bash
    # Test specific users first
    echo "admin" > priority-users.txt
@@ -106,6 +122,7 @@ Your attack of **727 users × 100,394 passwords = 72,986,438 combinations** woul
    ```
 
 3. **Increase threads** - Use more threads for faster execution
+
    - Default: 100 threads
    - Try: 500-1000 threads (monitor your system)
 
@@ -133,6 +150,7 @@ head -100 passwords.txt > test-passwords.txt
 ## Progress Tracking
 
 The tool now shows real-time progress:
+
 ```
 Progress: [████████░░░░░░░░░░░░] 25.3% | 18450/72986 | Rate: 1658/s | ETA: 8m32s
 ```
@@ -148,6 +166,7 @@ Progress: [████████░░░░░░░░░░░░] 25.3% |
 ### Custom Headers
 
 Add custom headers for authentication, tokens, etc.:
+
 ```
 Add custom headers? (y)
 Enter header (format: Key:Value): Authorization:Bearer token123
@@ -157,6 +176,7 @@ Enter header (format: Key:Value): X-Custom-Header:value
 ### Success/Failure Detection
 
 Configure how to detect successful login:
+
 - **Success codes**: HTTP status codes (e.g., `200,302`)
 - **Success keywords**: Text in response (e.g., `welcome,dashboard`)
 - **Failure keywords**: Text indicating failure (e.g., `invalid,incorrect`)
@@ -178,16 +198,16 @@ curl -X POST https://example.com/login \
 
 ```bash
 # Build for current platform
-go build -o letgo cmd/letgo/main.go
+go build -o application/letgo cmd/letgo/main.go
 
 # Build for Linux (amd64)
-GOOS=linux GOARCH=amd64 go build -o letgo cmd/letgo/main.go
+GOOS=linux GOARCH=amd64 go build -o application/letgo-amd64 cmd/letgo/main.go
 
 # Build for Windows
-GOOS=windows GOARCH=amd64 go build -o letgo.exe cmd/letgo/main.go
+GOOS=windows GOARCH=amd64 go build -o application/letgo.exe cmd/letgo/main.go
 
 # Build for macOS
-GOOS=darwin GOARCH=amd64 go build -o letgo cmd/letgo/main.go
+GOOS=darwin GOARCH=amd64 go build -o application/letgo cmd/letgo/main.go
 ```
 
 ## License

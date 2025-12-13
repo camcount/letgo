@@ -1,0 +1,5 @@
+# Proxy List - Validated Working Proxies
+# Format: protocol://host:port
+# Proxies are written in real-time as they are validated
+
+socks4://203.145.214.167:80

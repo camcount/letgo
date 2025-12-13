@@ -4,8 +4,13 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	
+	"github.com/letgo/paths"
 )
+
+var dataDir = paths.GetDataDir()
 
 // ReadProxiesFromFile reads proxies from a file and returns them as ProxyResult slice
 func ReadProxiesFromFile(filename string) ([]ProxyResult, error) {
@@ -85,14 +90,23 @@ func WriteProxiesToFile(proxies []ProxyResult, filename string) error {
 // BackupAndPrepareProxies copies existing validated proxies from proxy.txt to raw-proxy.txt and clears proxy.txt
 // Returns the number of backed up proxies
 func BackupAndPrepareProxies() (int, error) {
+	// Ensure proxy directory exists
+	proxyDir := filepath.Join(dataDir, "proxy")
+	if err := os.MkdirAll(proxyDir, 0755); err != nil {
+		return 0, fmt.Errorf("failed to create proxy directory: %w", err)
+	}
+
+	proxyFilePath := filepath.Join(proxyDir, "proxy.txt")
+	rawProxyFilePath := filepath.Join(proxyDir, "raw-proxy.txt")
+
 	// Check if proxy.txt exists
-	if _, err := os.Stat("proxy/proxy.txt"); os.IsNotExist(err) {
+	if _, err := os.Stat(proxyFilePath); os.IsNotExist(err) {
 		// File doesn't exist, nothing to backup
 		return 0, nil
 	}
 
 	// Read validated proxies from proxy.txt
-	validProxies, err := ReadProxiesFromFile("proxy/proxy.txt")
+	validProxies, err := ReadProxiesFromFile(proxyFilePath)
 	if err != nil {
 		return 0, fmt.Errorf("failed to read validated proxies: %w", err)
 	}
@@ -104,8 +118,8 @@ func BackupAndPrepareProxies() (int, error) {
 
 	// Read existing proxies from raw-proxy.txt (if it exists)
 	var rawProxies []ProxyResult
-	if _, err := os.Stat("proxy/raw-proxy.txt"); err == nil {
-		rawProxies, err = ReadProxiesFromFile("proxy/raw-proxy.txt")
+	if _, err := os.Stat(rawProxyFilePath); err == nil {
+		rawProxies, err = ReadProxiesFromFile(rawProxyFilePath)
 		if err != nil {
 			return 0, fmt.Errorf("failed to read raw proxies: %w", err)
 		}
@@ -118,12 +132,12 @@ func BackupAndPrepareProxies() (int, error) {
 	deduplicatedProxies := RemoveDuplicates(combinedProxies)
 
 	// Write combined and deduplicated list to raw-proxy.txt
-	if err := WriteProxiesToFile(deduplicatedProxies, "proxy/raw-proxy.txt"); err != nil {
+	if err := WriteProxiesToFile(deduplicatedProxies, rawProxyFilePath); err != nil {
 		return 0, fmt.Errorf("failed to write to raw-proxy.txt: %w", err)
 	}
 
 	// Clear proxy.txt by creating a new empty file with just header
-	if err := clearProxyFile("proxy/proxy.txt"); err != nil {
+	if err := clearProxyFile(proxyFilePath); err != nil {
 		return 0, fmt.Errorf("failed to clear proxy.txt: %w", err)
 	}
 
@@ -133,13 +147,15 @@ func BackupAndPrepareProxies() (int, error) {
 // MergeAndDeduplicateProxies reads proxies from raw-proxy.txt, removes duplicates, and writes back
 // Returns the number of unique proxies after deduplication
 func MergeAndDeduplicateProxies() (int, int, error) {
+	rawProxyFilePath := filepath.Join(dataDir, "proxy", "raw-proxy.txt")
+
 	// Check if raw-proxy.txt exists
-	if _, err := os.Stat("proxy/raw-proxy.txt"); os.IsNotExist(err) {
+	if _, err := os.Stat(rawProxyFilePath); os.IsNotExist(err) {
 		return 0, 0, fmt.Errorf("raw-proxy.txt not found")
 	}
 
 	// Read all proxies from raw-proxy.txt
-	proxies, err := ReadProxiesFromFile("proxy/raw-proxy.txt")
+	proxies, err := ReadProxiesFromFile(rawProxyFilePath)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to read proxies: %w", err)
 	}
@@ -155,7 +171,7 @@ func MergeAndDeduplicateProxies() (int, int, error) {
 	uniqueCount := len(deduplicatedProxies)
 
 	// Write back to raw-proxy.txt
-	if err := WriteProxiesToFile(deduplicatedProxies, "proxy/raw-proxy.txt"); err != nil {
+	if err := WriteProxiesToFile(deduplicatedProxies, rawProxyFilePath); err != nil {
 		return originalCount, uniqueCount, fmt.Errorf("failed to write deduplicated proxies: %w", err)
 	}
 

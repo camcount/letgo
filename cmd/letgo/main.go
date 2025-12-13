@@ -9,7 +9,15 @@ import (
 	consolemenu "github.com/letgo/console-menu"
 	"github.com/letgo/cracker"
 	"github.com/letgo/ddos-scanner"
+	"github.com/letgo/paths"
 )
+
+// dataDir is initialized at runtime to ensure proper path detection
+var dataDir string
+
+func init() {
+	dataDir = paths.GetDataDir()
+}
 
 // List of required .txt files
 var requiredTxtFiles = []string{
@@ -30,21 +38,29 @@ var requiredProxyFiles = []string{
 
 // Ensure all required .txt files exist, create if missing
 func ensureTxtFilesExist() {
+	// Create data directory if it doesn't exist
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		fmt.Printf("Error creating data directory: %v\n", err)
+		return
+	}
+
 	for _, file := range requiredTxtFiles {
-		if _, err := os.Stat(file); os.IsNotExist(err) {
-			f, err := os.Create(file)
+		filePath := filepath.Join(dataDir, file)
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			f, err := os.Create(filePath)
 			if err != nil {
-				fmt.Printf("Error creating %s: %v\n", file, err)
+				fmt.Printf("Error creating %s: %v\n", filePath, err)
 			} else {
 				f.Close()
-				fmt.Printf("Created missing file: %s\n", file)
+				fmt.Printf("Created missing file: %s\n", filePath)
 			}
 		}
 	}
 
 	// Create proxy directory if it doesn't exist
-	if _, err := os.Stat("proxy"); os.IsNotExist(err) {
-		if err := os.Mkdir("proxy", 0755); err != nil {
+	proxyDir := filepath.Join(dataDir, "proxy")
+	if _, err := os.Stat(proxyDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(proxyDir, 0755); err != nil {
 			fmt.Printf("Error creating proxy directory: %v\n", err)
 		} else {
 			fmt.Println("Created proxy directory")
@@ -53,13 +69,14 @@ func ensureTxtFilesExist() {
 
 	// Create required proxy files
 	for _, file := range requiredProxyFiles {
-		if _, err := os.Stat(file); os.IsNotExist(err) {
-			f, err := os.Create(file)
+		filePath := filepath.Join(dataDir, file)
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			f, err := os.Create(filePath)
 			if err != nil {
-				fmt.Printf("Error creating %s: %v\n", file, err)
+				fmt.Printf("Error creating %s: %v\n", filePath, err)
 			} else {
 				f.Close()
-				fmt.Printf("Created missing file: %s\n", file)
+				fmt.Printf("Created missing file: %s\n", filePath)
 			}
 		}
 	}
@@ -81,19 +98,20 @@ func ensureDDOSTargetsExist() {
 		}
 	} else {
 		// Check if file was actually moved (it existed and was moved)
-		if _, err := os.Stat(filepath.Join("ddos-targets", "cURL-DDOS.txt")); err == nil {
-			fmt.Println("Moved cURL-DDOS.txt to ddos-targets/")
+		ddosTargetsDir := filepath.Join(dataDir, "ddos-targets")
+		if _, err := os.Stat(filepath.Join(ddosTargetsDir, "cURL-DDOS.txt")); err == nil {
+			fmt.Println("Moved cURL-DDOS.txt to application/data/ddos-targets/")
 		}
 	}
 }
 
 // Ensure DDoS templates directory and base template exist
 func ensureDDoSTemplatesExist() {
-	templatesDir := "ddos-templates"
+	templatesDir := filepath.Join(dataDir, "ddos-templates")
 
 	// Create templates directory if it doesn't exist
 	if _, err := os.Stat(templatesDir); os.IsNotExist(err) {
-		if err := os.Mkdir(templatesDir, 0755); err != nil {
+		if err := os.MkdirAll(templatesDir, 0755); err != nil {
 			fmt.Printf("Error creating %s directory: %v\n", templatesDir, err)
 			return
 		}
@@ -101,7 +119,7 @@ func ensureDDoSTemplatesExist() {
 	}
 
 	// Create base template file if it doesn't exist
-	baseTemplatePath := "ddos-templates/base-ddos-template.txt"
+	baseTemplatePath := filepath.Join(templatesDir, "base-ddos-template.txt")
 	if _, err := os.Stat(baseTemplatePath); os.IsNotExist(err) {
 		baseTemplateContent := `# DDoS Attack Configuration Template
 # This file defines all configurable parameters for DDoS attacks
@@ -160,7 +178,7 @@ ReuseConnections=true
 UseProxy=false
 
 # Proxy list file path (one proxy per line, format: http://ip:port or https://ip:port)
-# ProxyListFile=proxy/proxy.txt
+# ProxyListFile=application/data/proxy/proxy.txt
 
 # Rotate through proxies for each request (true/false, default: false)
 RotateProxy=false
@@ -172,8 +190,8 @@ RotateProxy=false
 # Use custom user agents from file (true/false, default: true)
 UseCustomUserAgents=true
 
-# Custom user agents file path (one per line, default: user-agent.txt)
-# UserAgentFilePath=user-agent.txt
+# Custom user agents file path (one per line, default: application/data/user-agent.txt)
+# UserAgentFilePath=application/data/user-agent.txt
 
 # ==============================================================================
 # SLOWLORIS SPECIFIC SETTINGS

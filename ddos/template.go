@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/letgo/paths"
 )
 
 // LoadTemplateFile loads a DDoS configuration from a template file
@@ -176,9 +178,10 @@ func LoadTemplateFile(filePath string) (*DDoSConfig, error) {
 // SaveConfigAsTemplate saves a DDoS configuration to a template file
 func SaveConfigAsTemplate(config *DDoSConfig, fileName string) (string, error) {
 	// Ensure templates directory exists
-	templatesDir := "ddos-templates"
+	dataDir := paths.GetDataDir()
+	templatesDir := filepath.Join(dataDir, "ddos-templates")
 	if _, err := os.Stat(templatesDir); os.IsNotExist(err) {
-		if err := os.Mkdir(templatesDir, 0755); err != nil {
+		if err := os.MkdirAll(templatesDir, 0755); err != nil {
 			return "", fmt.Errorf("failed to create templates directory: %w", err)
 		}
 	}
@@ -299,7 +302,8 @@ func SaveConfigAsTemplate(config *DDoSConfig, fileName string) (string, error) {
 
 // ListAvailableTemplates returns a list of available template files
 func ListAvailableTemplates() ([]string, error) {
-	templatesDir := "ddos-templates"
+	dataDir := paths.GetDataDir()
+	templatesDir := filepath.Join(dataDir, "ddos-templates")
 
 	entries, err := os.ReadDir(templatesDir)
 	if err != nil {

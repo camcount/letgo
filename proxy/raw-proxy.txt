@@ -1,4 +1,0 @@
-# Proxy List - Scraped Proxies
-# Format: protocol://host:port
-# Total: 46231
-

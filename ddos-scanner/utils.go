@@ -7,7 +7,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	
+	"github.com/letgo/paths"
 )
+
+var dataDir = paths.GetDataDir()
 
 // ExtractSiteName extracts a clean site name from URL for file naming
 // Returns base domain with dots preserved (e.g., "airportthai.co.th" from "aoportal.airportthai.co.th")
@@ -109,9 +113,9 @@ func GenerateFileName(method string, siteName string) string {
 
 // EnsureDDOSTargetsDir ensures the ddos-targets directory exists
 func EnsureDDOSTargetsDir() error {
-	dir := "ddos-targets"
+	dir := filepath.Join(dataDir, "ddos-targets")
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return os.Mkdir(dir, 0755)
+		return os.MkdirAll(dir, 0755)
 	}
 	return nil
 }
@@ -119,7 +123,7 @@ func EnsureDDOSTargetsDir() error {
 // MoveCURLDDOSFile moves cURL-DDOS.txt to ddos-targets folder if it exists in root
 func MoveCURLDDOSFile() error {
 	sourcePath := "cURL-DDOS.txt"
-	targetPath := filepath.Join("ddos-targets", "cURL-DDOS.txt")
+	targetPath := filepath.Join(dataDir, "ddos-targets", "cURL-DDOS.txt")
 
 	// Check if source exists
 	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
@@ -147,7 +151,7 @@ func ListDDOSTargetFiles() ([]string, error) {
 		return nil, err
 	}
 
-	dir := "ddos-targets"
+	dir := filepath.Join(dataDir, "ddos-targets")
 	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read ddos-targets directory: %w", err)
@@ -169,7 +173,7 @@ func ListDDOSTargetFolders() ([]string, error) {
 		return nil, err
 	}
 
-	dir := "ddos-targets"
+	dir := filepath.Join(dataDir, "ddos-targets")
 	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read ddos-targets directory: %w", err)
@@ -191,7 +195,7 @@ func ListDDOSTargetFilesInFolder(folderName string) ([]string, error) {
 		return nil, err
 	}
 
-	folderPath := filepath.Join("ddos-targets", folderName)
+	folderPath := filepath.Join(dataDir, "ddos-targets", folderName)
 	files, err := os.ReadDir(folderPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read folder %s: %w", folderName, err)
@@ -342,5 +346,34 @@ func IsSameDomainOrSubdomain(targetURL, originURL string) bool {
 
 	// Check if target host ends with the base domain
 	return strings.HasSuffix(targetHost, "."+baseDomain) || targetHost == baseDomain
+}
+
+// ExtractHostname extracts the full hostname (domain + subdomain) from a URL
+// Returns the full hostname for folder naming
+// For example:
+// - "https://www.example.com" -> "www.example.com"
+// - "https://api.example.com" -> "api.example.com"
+// - "https://test.example.com" -> "test.example.com"
+// - "https://example.com" -> "example.com"
+func ExtractHostname(targetURL string) string {
+	parsed, err := url.Parse(targetURL)
+	if err != nil {
+		return ""
+	}
+
+	host := parsed.Hostname()
+	if host == "" {
+		return ""
+	}
+
+	// Remove port if present
+	if idx := strings.Index(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+
+	host = strings.ToLower(host)
+	
+	// Return the full hostname, sanitized for folder name
+	return sanitizeFolderName(host)
 }
 

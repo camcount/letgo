@@ -286,7 +286,8 @@ func (m *Menu) scanEndpoints() {
 		if err := m.writeValidEndpointsToFile(results); err != nil {
 			fmt.Printf("Warning: Failed to write valid endpoints to file: %v\n", err)
 		} else {
-			fmt.Printf("\n✓ Valid endpoints saved to valid-url.txt\n")
+			validUrlPath := filepath.Join(dataDir, "valid-url.txt")
+			fmt.Printf("\n✓ Valid endpoints saved to %s\n", validUrlPath)
 		}
 	}
 
@@ -486,7 +487,8 @@ func (m *Menu) scanSecrets() {
 		if err := m.writeSecretResultsToFile(results); err != nil {
 			fmt.Printf("Warning: Failed to write results to file: %v\n", err)
 		} else {
-			fmt.Printf("✓ Results saved to secrets-found.txt\n")
+			secretsPath := filepath.Join(dataDir, "secrets-found.txt")
+			fmt.Printf("✓ Results saved to %s\n", secretsPath)
 		}
 	}
 
@@ -773,19 +775,21 @@ func (m *Menu) scanDDOSTarget() {
 					if len(endpoints) > 0 {
 						methodName := string(attackMode)
 						filename := ddosscanner.GenerateFileName(methodName, siteName)
-						fmt.Printf("  • %s (%d endpoints)\n", filepath.Join("ddos-targets", filename), len(endpoints))
+						ddosTargetsDir := filepath.Join(dataDir, "ddos-targets")
+						fmt.Printf("  • %s (%d endpoints)\n", filepath.Join(ddosTargetsDir, filename), len(endpoints))
 					}
 				}
 			}
 		} else if len(allResults) == 1 {
 			// Single URL result
 			siteName := ddosscanner.ExtractSiteName(inputURLs[0])
-			fmt.Println("✓ Results saved to ddos-targets/ folder:")
+			ddosTargetsDir := filepath.Join(dataDir, "ddos-targets")
+			fmt.Printf("✓ Results saved to %s folder:\n", ddosTargetsDir)
 			for attackMode, endpoints := range combinedValidEndpoints {
 				if len(endpoints) > 0 {
 					methodName := string(attackMode)
 					filename := ddosscanner.GenerateFileName(methodName, siteName)
-					fmt.Printf("  • %s (%d endpoints)\n", filepath.Join("ddos-targets", filename), len(endpoints))
+					fmt.Printf("  • %s (%d endpoints)\n", filepath.Join(ddosTargetsDir, filename), len(endpoints))
 				}
 			}
 		}

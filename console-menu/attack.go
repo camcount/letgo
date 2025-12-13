@@ -23,11 +23,12 @@ func (m *Menu) attackWithCurl() {
 	reader := bufio.NewReader(os.Stdin)
 
 	// Ask for cURL file path
-	fmt.Print("\nEnter cURL config file path (default: cURL-Bruteforce.txt): ")
+	defaultCurlFile := filepath.Join(dataDir, "cURL-Bruteforce.txt")
+	fmt.Printf("\nEnter cURL config file path (default: %s): ", defaultCurlFile)
 	curlFile, _ := reader.ReadString('\n')
 	curlFile = strings.TrimSpace(curlFile)
 	if curlFile == "" {
-		curlFile = "cURL-Bruteforce.txt"
+		curlFile = defaultCurlFile
 	}
 
 	// Load cURL configurations from file
@@ -111,7 +112,8 @@ func (m *Menu) attackWithCurl() {
 		// Load proxies from proxy/proxy.txt
 		proxies, err := m.loadValidProxies()
 		if err != nil || len(proxies) == 0 {
-			fmt.Printf("Warning: No valid proxies found in proxy/proxy.txt (%v)\n", err)
+			proxyPath := filepath.Join(dataDir, "proxy", "proxy.txt")
+			fmt.Printf("Warning: No valid proxies found in %s (%v)\n", proxyPath, err)
 			fmt.Println("Please run 'Scrape Proxies' and 'Validate Proxies' first.")
 			fmt.Print("Continue without proxy? (y/n): ")
 			continueStr, _ := reader.ReadString('\n')
@@ -144,11 +146,12 @@ func (m *Menu) attackWithCurl() {
 
 	var username, userlist string
 	if useUserlist == "y" || useUserlist == "yes" {
-		fmt.Print("Enter Userlist path (default: users.txt): ")
+		defaultUserlist := filepath.Join(dataDir, "users.txt")
+		fmt.Printf("Enter Userlist path (default: %s): ", defaultUserlist)
 		userlist, _ = reader.ReadString('\n')
 		userlist = strings.TrimSpace(userlist)
 		if userlist == "" {
-			userlist = "users.txt"
+			userlist = defaultUserlist
 		}
 	} else {
 		fmt.Print("Enter Username: ")
@@ -160,11 +163,12 @@ func (m *Menu) attackWithCurl() {
 		}
 	}
 
-	fmt.Print("Enter Wordlist path (default: passwords.txt): ")
+	defaultWordlist := filepath.Join(dataDir, "passwords.txt")
+	fmt.Printf("Enter Wordlist path (default: %s): ", defaultWordlist)
 	wordlist, _ := reader.ReadString('\n')
 	wordlist = strings.TrimSpace(wordlist)
 	if wordlist == "" {
-		wordlist = "passwords.txt"
+		wordlist = defaultWordlist
 	}
 
 	fmt.Print("Enter Max Threads (default: 100): ")
@@ -319,7 +323,8 @@ func (m *Menu) attackWithCurl() {
 			if err := m.writeResult(curlConfig.URL, foundUsername, foundPassword); err != nil {
 				fmt.Printf("  ⚠ Warning: Failed to write result to file: %v\n", err)
 			} else {
-				fmt.Printf("  ✓ Result saved to results.txt\n")
+				resultsPath := filepath.Join(dataDir, "results.txt")
+				fmt.Printf("  ✓ Result saved to %s\n", resultsPath)
 			}
 			successCount++
 		} else {
@@ -332,7 +337,8 @@ func (m *Menu) attackWithCurl() {
 	fmt.Printf("Total configurations attacked: %d\n", totalConfigs)
 	fmt.Printf("Successful credentials found: %d\n", successCount)
 	if successCount > 0 {
-		fmt.Printf("Results saved to results.txt\n")
+		resultsPath := filepath.Join(dataDir, "results.txt")
+		fmt.Printf("Results saved to %s\n", resultsPath)
 	}
 	fmt.Println()
 }
@@ -359,7 +365,8 @@ func (m *Menu) ddosAttack() {
 		// Template mode
 		templates, err := ddos.ListAvailableTemplates()
 		if err != nil || len(templates) == 0 {
-			fmt.Println("\nNo templates available in ddos-templates folder.")
+			templatesDir := filepath.Join(dataDir, "ddos-templates")
+			fmt.Printf("\nNo templates available in %s folder.\n", templatesDir)
 			fmt.Println("Please create templates first or use manual configuration.")
 			return
 		}
@@ -377,7 +384,7 @@ func (m *Menu) ddosAttack() {
 			return
 		}
 
-		templatePath := filepath.Join("ddos-templates", templates[templateNum-1])
+		templatePath := filepath.Join(dataDir, "ddos-templates", templates[templateNum-1])
 		var loadErr error
 		templateConfig, loadErr = ddos.LoadTemplateFile(templatePath)
 		if loadErr != nil {
@@ -397,8 +404,8 @@ func (m *Menu) ddosAttack() {
 		folders = []string{}
 	}
 
-	// Check if cURL-DDOS.txt exists in root folder
-	defaultFile := filepath.Join("ddos-targets", "cURL-DDOS.txt")
+	// Check if cURL-DDOS.txt exists in data folder
+	defaultFile := filepath.Join(dataDir, "ddos-targets", "cURL-DDOS.txt")
 	hasDefaultFile := false
 	if _, err := os.Stat(defaultFile); err == nil {
 		hasDefaultFile = true
@@ -408,7 +415,8 @@ func (m *Menu) ddosAttack() {
 	var curlFile string
 
 	if len(folders) == 0 && !hasDefaultFile {
-		fmt.Println("No site folders or target files found in ddos-targets/ folder.")
+		ddosTargetsDir := filepath.Join(dataDir, "ddos-targets")
+		fmt.Printf("No site folders or target files found in %s folder.\n", ddosTargetsDir)
 		fmt.Println("Please run 'Scan Target for DDoS cURLs' first or create target files manually.")
 		fmt.Print("\nEnter cURL-DDOS config file path (or press Enter to cancel): ")
 		curlFileInput, _ := reader.ReadString('\n')
@@ -484,7 +492,7 @@ func (m *Menu) ddosAttack() {
 		if configChoice == "1" && templateConfig != nil {
 			// Template mode: auto-match files
 			if selectedFolder != "" {
-				folderPath := filepath.Join("ddos-targets", selectedFolder)
+				folderPath := filepath.Join(dataDir, "ddos-targets", selectedFolder)
 				matchingFiles, err := ddosscanner.GetFilesMatchingTemplate(folderPath, string(templateConfig.AttackMode))
 				if err != nil {
 					fmt.Printf("Error reading folder: %v\n", err)
@@ -521,7 +529,7 @@ func (m *Menu) ddosAttack() {
 				// Root folder - check for matching files or use default cURL-DDOS.txt
 				if hasDefaultFile {
 					// Check if default file matches template
-					folderPath := "ddos-targets"
+					folderPath := filepath.Join(dataDir, "ddos-targets")
 					matchingFiles, err := ddosscanner.GetFilesMatchingTemplate(folderPath, string(templateConfig.AttackMode))
 					if err != nil {
 						fmt.Printf("Error reading folder: %v\n", err)
@@ -573,7 +581,7 @@ func (m *Menu) ddosAttack() {
 					}
 				} else {
 					// No default file, check for matching files in root
-					folderPath := "ddos-targets"
+					folderPath := filepath.Join(dataDir, "ddos-targets")
 					matchingFiles, err := ddosscanner.GetFilesMatchingTemplate(folderPath, string(templateConfig.AttackMode))
 					if err != nil {
 						fmt.Printf("Error reading folder: %v\n", err)
@@ -634,7 +642,7 @@ func (m *Menu) ddosAttack() {
 			}
 
 			// Check for default file
-			defaultFile := filepath.Join("ddos-targets", "cURL-DDOS.txt")
+			defaultFile := filepath.Join(dataDir, "ddos-targets", "cURL-DDOS.txt")
 			hasDefault := false
 			for _, file := range targetFiles {
 				if file == defaultFile {
@@ -643,44 +651,51 @@ func (m *Menu) ddosAttack() {
 				}
 			}
 
-			fmt.Println("\n===== Available Target Files =====")
-			fmt.Println("Select a target file:")
-			for i, file := range targetFiles {
-				fileName := filepath.Base(file)
-				marker := ""
-				if file == defaultFile {
-					marker = " (default)"
-				}
-				fmt.Printf("  [%d] %s%s\n", i+1, fileName, marker)
-			}
-			fmt.Print("\nEnter file number (or press Enter for default): ")
-			fileChoice, _ := reader.ReadString('\n')
-			fileChoice = strings.TrimSpace(fileChoice)
-
-			if fileChoice == "" {
-				// Use default if available, otherwise first file
-				if hasDefault {
-					curlFile = defaultFile
-				} else {
-					curlFile = targetFiles[0]
-				}
+			// Skip file selection menu if user already selected option [1] cURL-DDOS.txt (default)
+			// This happens when selectedFolder is empty (root) and only the default file exists
+			if selectedFolder == "" && hasDefaultFile && len(targetFiles) == 1 && targetFiles[0] == defaultFile {
+				curlFile = defaultFile
+				fmt.Printf("✓ Using default file: %s\n", filepath.Base(curlFile))
 			} else {
-				fileNum, err := strconv.Atoi(fileChoice)
-				if err != nil || fileNum < 1 || fileNum > len(targetFiles) {
-					fmt.Printf("Invalid file number. Using default: %s\n", defaultFile)
+				fmt.Println("\n===== Available Target Files =====")
+				fmt.Println("Select a target file:")
+				for i, file := range targetFiles {
+					fileName := filepath.Base(file)
+					marker := ""
+					if file == defaultFile {
+						marker = " (default)"
+					}
+					fmt.Printf("  [%d] %s%s\n", i+1, fileName, marker)
+				}
+				fmt.Print("\nEnter file number (or press Enter for default): ")
+				fileChoice, _ := reader.ReadString('\n')
+				fileChoice = strings.TrimSpace(fileChoice)
+
+				if fileChoice == "" {
+					// Use default if available, otherwise first file
 					if hasDefault {
 						curlFile = defaultFile
-					} else if len(targetFiles) > 0 {
-						curlFile = targetFiles[0]
 					} else {
-						fmt.Println("Error: No valid target files available.")
-						return
+						curlFile = targetFiles[0]
 					}
 				} else {
-					curlFile = targetFiles[fileNum-1]
+					fileNum, err := strconv.Atoi(fileChoice)
+					if err != nil || fileNum < 1 || fileNum > len(targetFiles) {
+						fmt.Printf("Invalid file number. Using default: %s\n", defaultFile)
+						if hasDefault {
+							curlFile = defaultFile
+						} else if len(targetFiles) > 0 {
+							curlFile = targetFiles[0]
+						} else {
+							fmt.Println("Error: No valid target files available.")
+							return
+						}
+					} else {
+						curlFile = targetFiles[fileNum-1]
+					}
 				}
+				fmt.Printf("✓ Selected: %s\n", filepath.Base(curlFile))
 			}
-			fmt.Printf("✓ Selected: %s\n", filepath.Base(curlFile))
 		}
 	}
 
@@ -791,7 +806,8 @@ func (m *Menu) ddosAttack() {
 			// Load proxies from proxy/proxy.txt
 			proxies, err := m.loadValidProxies()
 			if err != nil || len(proxies) == 0 {
-				fmt.Printf("Warning: No valid proxies found in proxy/proxy.txt (%v)\n", err)
+				proxyPath := filepath.Join(dataDir, "proxy", "proxy.txt")
+				fmt.Printf("Warning: No valid proxies found in %s (%v)\n", proxyPath, err)
 				fmt.Println("Please run 'Scrape Proxies' and 'Validate Proxies' first.")
 				fmt.Print("Continue without proxy? (y/n): ")
 				continueStr, _ := reader.ReadString('\n')
@@ -979,7 +995,8 @@ func (m *Menu) ddosAttack() {
 		useCustomUserAgents := useCustomAgentsStr != "n" && useCustomAgentsStr != "no"
 
 		if useCustomUserAgents {
-			fmt.Println("✓ Custom user agents enabled (user-agent.txt)")
+			userAgentPath := filepath.Join(dataDir, "user-agent.txt")
+			fmt.Printf("✓ Custom user agents enabled (%s)\n", userAgentPath)
 		} else {
 			fmt.Println("✓ Using built-in user agents")
 		}
@@ -1081,7 +1098,7 @@ func (m *Menu) ddosAttack() {
 			// Apply custom user agents settings
 			config.UseCustomUserAgents = useCustomUserAgents
 			if useCustomUserAgents {
-				config.UserAgentFilePath = "user-agent.txt"
+				config.UserAgentFilePath = filepath.Join(dataDir, "user-agent.txt")
 			}
 			// Apply TLS attack settings
 			config.UseTLSAttack = useTLSAttack
@@ -1509,7 +1526,11 @@ func (m *Menu) pathTraversalAttack() {
 		fmt.Println(pathtraversal.FormatResults(results))
 
 		// Save to file
-		outputFile := filepath.Join("results.txt")
+		// Ensure data directory exists
+		if err := os.MkdirAll(dataDir, 0755); err != nil {
+			fmt.Printf("Warning: Failed to create data directory: %v\n", err)
+		}
+		outputFile := filepath.Join(dataDir, "results.txt")
 		fmt.Printf("\nSaving results to %s...\n", outputFile)
 
 		// Append to results file
@@ -1521,7 +1542,7 @@ func (m *Menu) pathTraversalAttack() {
 			fmt.Fprintf(f, "Total Vulnerabilities: %d\n", len(results))
 			fmt.Fprintf(f, "%s\n", pathtraversal.FormatResults(results))
 			f.Close()
-			fmt.Println("[✓] Results saved to results.txt")
+			fmt.Printf("[✓] Results saved to %s\n", outputFile)
 		}
 	} else {
 		fmt.Println("[*] No vulnerabilities detected")

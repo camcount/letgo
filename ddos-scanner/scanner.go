@@ -586,53 +586,83 @@ func (ts *TargetScanner) validateEndpoints(ctx context.Context, endpoints []stri
 	wg.Wait()
 }
 
-// SaveResults saves validated endpoints to files
+// SaveResults saves validated endpoints to files, grouped by full hostname (domain + subdomain)
 func (ts *TargetScanner) SaveResults(result *ScanResult) error {
 	if err := EnsureDDOSTargetsDir(); err != nil {
 		return fmt.Errorf("failed to create ddos-targets directory: %w", err)
 	}
 
-	siteName := ExtractSiteName(ts.config.TargetURL)
-
-	// Create site-specific folder
-	siteFolder := filepath.Join("ddos-targets", siteName)
-	if err := os.MkdirAll(siteFolder, 0755); err != nil {
-		return fmt.Errorf("failed to create site folder %s: %w", siteFolder, err)
-	}
+	// Group endpoints by full hostname (domain + subdomain) and attack mode
+	// Structure: hostname -> attackMode -> []endpoints
+	groupedEndpoints := make(map[string]map[ddos.AttackMode][]EndpointResult)
 
 	for attackMode, endpoints := range result.ValidEndpoints {
 		if len(endpoints) == 0 {
 			continue
 		}
 
-		// Generate filename (using sanitized site name for filename, but folder uses original)
-		methodName := string(attackMode)
-		// For filename, use sanitized version (with hyphens) to ensure compatibility
-		sanitizedSiteName := sanitizeFilename(siteName)
-		filename := GenerateFileName(methodName, sanitizedSiteName)
-		filepath := filepath.Join(siteFolder, filename)
-
-		// Write cURL commands to file
-		file, err := os.Create(filepath)
-		if err != nil {
-			continue // Skip this file if we can't create it
-		}
-
-		// Write header comment
-		fmt.Fprintf(file, "# DDoS Target cURL Commands\n")
-		fmt.Fprintf(file, "# Target: %s\n", ts.config.TargetURL)
-		fmt.Fprintf(file, "# Attack Method: %s\n", methodName)
-		fmt.Fprintf(file, "# Generated: %s\n", time.Now().Format(time.RFC3339))
-		fmt.Fprintf(file, "# Total valid endpoints: %d\n\n", len(endpoints))
-
-		// Write cURL commands
+		// Group endpoints by full hostname
 		for _, endpoint := range endpoints {
-			if endpoint.CurlCommand != "" {
-				fmt.Fprintf(file, "%s\n\n", endpoint.CurlCommand)
+			hostname := ExtractHostname(endpoint.URL)
+			if hostname == "" {
+				// Fallback to using the target URL's hostname if extraction fails
+				hostname = ExtractSiteName(ts.config.TargetURL)
 			}
+
+			// Initialize nested map if needed
+			if groupedEndpoints[hostname] == nil {
+				groupedEndpoints[hostname] = make(map[ddos.AttackMode][]EndpointResult)
+			}
+
+			// Add endpoint to the appropriate hostname and attack mode group
+			groupedEndpoints[hostname][attackMode] = append(groupedEndpoints[hostname][attackMode], endpoint)
+		}
+	}
+
+	// Save files for each hostname group
+	for hostname, attackModes := range groupedEndpoints {
+		// Create hostname folder (e.g., example.com, test.example.com, api.example.com)
+		hostnameFolder := filepath.Join(dataDir, "ddos-targets", hostname)
+		if err := os.MkdirAll(hostnameFolder, 0755); err != nil {
+			continue // Skip this hostname if we can't create folder
 		}
 
-		file.Close()
+		// Save files for each attack mode in this hostname
+		for attackMode, endpoints := range attackModes {
+			if len(endpoints) == 0 {
+				continue
+			}
+
+			// Generate filename
+			methodName := string(attackMode)
+			// For filename, use sanitized version (with hyphens) to ensure compatibility
+			sanitizedHostname := sanitizeFilename(hostname)
+			filename := GenerateFileName(methodName, sanitizedHostname)
+			filepath := filepath.Join(hostnameFolder, filename)
+
+			// Write cURL commands to file
+			file, err := os.Create(filepath)
+			if err != nil {
+				continue // Skip this file if we can't create it
+			}
+
+			// Write header comment
+			fmt.Fprintf(file, "# DDoS Target cURL Commands\n")
+			fmt.Fprintf(file, "# Target: %s\n", ts.config.TargetURL)
+			fmt.Fprintf(file, "# Hostname: %s\n", hostname)
+			fmt.Fprintf(file, "# Attack Method: %s\n", methodName)
+			fmt.Fprintf(file, "# Generated: %s\n", time.Now().Format(time.RFC3339))
+			fmt.Fprintf(file, "# Total valid endpoints: %d\n\n", len(endpoints))
+
+			// Write cURL commands
+			for _, endpoint := range endpoints {
+				if endpoint.CurlCommand != "" {
+					fmt.Fprintf(file, "%s\n\n", endpoint.CurlCommand)
+				}
+			}
+
+			file.Close()
+		}
 	}
 
 	// Only create files for valid endpoints - do not create discovered file if no valid endpoints

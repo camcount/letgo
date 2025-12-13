@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -29,14 +30,17 @@ func (m *Menu) generateUserList() {
 		}
 	}
 
-	if err := userlist.Generate(filename, count); err != nil {
+	// Join filename with data directory
+	filePath := filepath.Join(dataDir, filename)
+	
+	if err := userlist.Generate(filePath, count); err != nil {
 		fmt.Printf("Error generating user list: %v\n", err)
 		return
 	}
 	if count > 0 {
-		fmt.Printf("User list with %d entries generated and saved to %s\n", count, filename)
+		fmt.Printf("User list with %d entries generated and saved to %s\n", count, filePath)
 	} else {
-		fmt.Printf("User list generated and saved to %s\n", filename)
+		fmt.Printf("User list generated and saved to %s\n", filePath)
 	}
 }
 
@@ -57,14 +61,17 @@ func (m *Menu) generatePasswordList() {
 		}
 	}
 
-	if err := wordlist.Generate(filename, count); err != nil {
+	// Join filename with data directory
+	filePath := filepath.Join(dataDir, filename)
+	
+	if err := wordlist.Generate(filePath, count); err != nil {
 		fmt.Printf("Error generating password list: %v\n", err)
 		return
 	}
 	if count > 0 {
-		fmt.Printf("Password list with %d entries generated and saved to %s\n", count, filename)
+		fmt.Printf("Password list with %d entries generated and saved to %s\n", count, filePath)
 	} else {
-		fmt.Printf("Password list generated and saved to %s\n", filename)
+		fmt.Printf("Password list generated and saved to %s\n", filePath)
 	}
 }
 

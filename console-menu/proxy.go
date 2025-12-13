@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -26,7 +27,8 @@ func (m *Menu) scrapeProxies() {
 	if err != nil {
 		fmt.Printf("Warning: Could not backup existing proxies: %v\n", err)
 	} else if backedUp > 0 {
-		fmt.Printf("✓ Backed up %d validated proxies from proxy/proxy.txt\n", backedUp)
+		proxyPath := filepath.Join(dataDir, "proxy", "proxy.txt")
+		fmt.Printf("✓ Backed up %d validated proxies from %s\n", backedUp, proxyPath)
 	} else {
 		fmt.Println("No existing validated proxies to backup.")
 	}
@@ -103,7 +105,8 @@ func (m *Menu) scrapeProxies() {
 
 	// Merge with existing proxies and deduplicate
 	fmt.Println("\n[Step 3/3] Merging with backed-up proxies and removing duplicates...")
-	if err := m.writeProxiesToFile(uniqueProxies, "proxy/raw-proxy.txt"); err != nil {
+	rawProxyFilePath := filepath.Join(dataDir, "proxy", "raw-proxy.txt")
+	if err := m.writeProxiesToFile(uniqueProxies, rawProxyFilePath); err != nil {
 		fmt.Printf("Error: Failed to save proxies: %v\n", err)
 		return
 	}
@@ -117,7 +120,8 @@ func (m *Menu) scrapeProxies() {
 			originalCount, uniqueCount, originalCount-uniqueCount)
 	}
 
-	fmt.Println("\n✓ All proxies saved to proxy/raw-proxy.txt!")
+	rawProxyFilePath = filepath.Join(dataDir, "proxy", "raw-proxy.txt")
+	fmt.Printf("\n✓ All proxies saved to %s!\n", rawProxyFilePath)
 	fmt.Println("\nNext step: Use 'Validate Proxies' to test which proxies are working.")
 }
 
@@ -126,25 +130,28 @@ func (m *Menu) validateProxies() {
 	reader := bufio.NewReader(os.Stdin)
 
 	fmt.Println("\n[Proxy Validator]")
-	fmt.Println("This will test proxies from proxy/raw-proxy.txt and save working ones.")
+	rawProxyFilePath := filepath.Join(dataDir, "proxy", "raw-proxy.txt")
+	fmt.Printf("This will test proxies from %s and save working ones.\n", rawProxyFilePath)
 
 	// Check if raw-proxy.txt exists
-	if _, err := os.Stat("proxy/raw-proxy.txt"); os.IsNotExist(err) {
-		fmt.Println("Error: proxy/raw-proxy.txt not found.")
+	if _, err := os.Stat(rawProxyFilePath); os.IsNotExist(err) {
+		fmt.Printf("Error: %s not found.\n", rawProxyFilePath)
 		fmt.Println("Please run 'Scrape Proxies' first.")
 		return
 	}
 
 	// Load proxies from file
-	fmt.Println("\nLoading proxies from proxy/raw-proxy.txt...")
-	proxies, err := loadProxiesFromFile("proxy/raw-proxy.txt")
+	fmt.Printf("\nLoading proxies from %s...\n", rawProxyFilePath)
+	proxies, err := loadProxiesFromFile(rawProxyFilePath)
+	var proxyFilePath string
 	if err != nil {
 		fmt.Printf("Error: Failed to load proxies: %v\n", err)
 		return
 	}
 
 	if len(proxies) == 0 {
-		fmt.Println("No proxies found in proxy/raw-proxy.txt")
+		rawProxyFilePath := filepath.Join(dataDir, "proxy", "raw-proxy.txt")
+		fmt.Printf("No proxies found in %s\n", rawProxyFilePath)
 		return
 	}
 
@@ -173,8 +180,9 @@ func (m *Menu) validateProxies() {
 	}
 
 	// Clear proxy.txt before validation starts
-	fmt.Println("\nPreparing proxy/proxy.txt for incremental writing...")
-	if err := m.clearProxyFile("proxy/proxy.txt"); err != nil {
+	proxyFilePath = filepath.Join(dataDir, "proxy", "proxy.txt")
+	fmt.Printf("\nPreparing %s for incremental writing...\n", proxyFilePath)
+	if err := m.clearProxyFile(proxyFilePath); err != nil {
 		fmt.Printf("Error: Failed to prepare file: %v\n", err)
 		return
 	}
@@ -193,7 +201,7 @@ func (m *Menu) validateProxies() {
 		},
 		OnValidProxy: func(p proxyscrape.ProxyResult) {
 			// Write valid proxy immediately
-			if err := m.appendProxyToFile(p, "proxy/proxy.txt"); err == nil {
+			if err := m.appendProxyToFile(p, proxyFilePath); err == nil {
 				atomic.AddInt32(&validCount, 1)
 			}
 		},
@@ -204,10 +212,9 @@ func (m *Menu) validateProxies() {
 			}
 		},
 	}
-
 	fmt.Printf("\nStarting proxy validation with %d threads...\n", maxThreads)
-	fmt.Println("Valid proxies will be saved to proxy/proxy.txt in real-time.")
-	fmt.Println("Validated proxies will be removed from proxy/raw-proxy.txt in real-time.")
+	fmt.Printf("Valid proxies will be saved to %s in real-time.\n", proxyFilePath)
+	fmt.Printf("Validated proxies will be removed from %s in real-time.\n", rawProxyFilePath)
 	fmt.Println("This may take a while depending on the number of proxies...")
 
 	validator := proxyscrape.NewValidator(config)
@@ -221,7 +228,7 @@ func (m *Menu) validateProxies() {
 
 	if err != nil {
 		fmt.Printf("Error during validation: %v\n", err)
-		fmt.Printf("Note: %d valid proxies were already saved to proxy/proxy.txt\n", atomic.LoadInt32(&validCount))
+		fmt.Printf("Note: %d valid proxies were already saved to %s\n", atomic.LoadInt32(&validCount), proxyFilePath)
 		return
 	}
 
@@ -252,8 +259,10 @@ func (m *Menu) validateProxies() {
 		fmt.Printf("  %s: %d\n", strings.ToUpper(protocol), count)
 	}
 
-	fmt.Printf("\n✓ All %d working proxies have been saved to proxy/proxy.txt\n", len(validProxies))
-	fmt.Printf("✓ All validated proxies have been removed from proxy/raw-proxy.txt\n")
+	proxyFilePath = filepath.Join(dataDir, "proxy", "proxy.txt")
+	rawProxyFilePath = filepath.Join(dataDir, "proxy", "raw-proxy.txt")
+	fmt.Printf("\n✓ All %d working proxies have been saved to %s\n", len(validProxies), proxyFilePath)
+	fmt.Printf("✓ All validated proxies have been removed from %s\n", rawProxyFilePath)
 	fmt.Println("You can now use these proxies for attacks (future feature).")
 }
 
@@ -374,8 +383,9 @@ func (m *Menu) removeProxyFromRawFile(p proxyscrape.ProxyResult) error {
 	m.resultMutex.Lock()
 	defer m.resultMutex.Unlock()
 
+	rawProxyFilePath := filepath.Join(dataDir, "proxy", "raw-proxy.txt")
 	// Read all proxies from raw-proxy.txt
-	file, err := os.Open("proxy/raw-proxy.txt")
+	file, err := os.Open(rawProxyFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
@@ -398,7 +408,7 @@ func (m *Menu) removeProxyFromRawFile(p proxyscrape.ProxyResult) error {
 	}
 
 	// Write back remaining proxies
-	outFile, err := os.Create("proxy/raw-proxy.txt")
+	outFile, err := os.Create(rawProxyFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
@@ -421,7 +431,8 @@ func (m *Menu) clearRawProxyFile() error {
 	m.resultMutex.Lock()
 	defer m.resultMutex.Unlock()
 
-	file, err := os.Create("proxy/raw-proxy.txt")
+	rawProxyFilePath := filepath.Join(dataDir, "proxy", "raw-proxy.txt")
+	file, err := os.Create(rawProxyFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to clear file: %w", err)
 	}
@@ -440,7 +451,8 @@ func (m *Menu) clearRawProxyFile() error {
 
 // loadValidProxies loads validated proxies from proxy/proxy.txt
 func (m *Menu) loadValidProxies() ([]string, error) {
-	file, err := os.Open("proxy/proxy.txt")
+	proxyFilePath := filepath.Join(dataDir, "proxy", "proxy.txt")
+	file, err := os.Open(proxyFilePath)
 	if err != nil {
 		return nil, err
 	}
