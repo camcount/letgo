@@ -10,6 +10,7 @@ import (
 )
 
 // ExtractSiteName extracts a clean site name from URL for file naming
+// Returns base domain with dots preserved (e.g., "airportthai.co.th" from "aoportal.airportthai.co.th")
 func ExtractSiteName(targetURL string) string {
 	parsed, err := url.Parse(targetURL)
 	if err != nil {
@@ -27,14 +28,52 @@ func ExtractSiteName(targetURL string) string {
 		host = host[:idx]
 	}
 
-	// Replace dots with hyphens
-	host = strings.ReplaceAll(host, ".", "-")
+	// Extract base domain (e.g., "airportthai.co.th" from "aoportal.airportthai.co.th")
+	hostParts := strings.Split(host, ".")
+	if len(hostParts) < 2 {
+		return sanitizeFilename(host)
+	}
 
-	// Remove protocol prefix if somehow included
-	host = strings.TrimPrefix(host, "http-")
-	host = strings.TrimPrefix(host, "https-")
+	// Get the base domain (last 2 parts for .co.th, .com, etc., or last 3 for .co.uk)
+	var baseDomain string
+	if len(hostParts) >= 3 {
+		// Handle cases like .co.th, .co.uk
+		if hostParts[len(hostParts)-2] == "co" {
+			baseDomain = strings.Join(hostParts[len(hostParts)-3:], ".")
+		} else {
+			baseDomain = strings.Join(hostParts[len(hostParts)-2:], ".")
+		}
+	} else {
+		baseDomain = strings.Join(hostParts[len(hostParts)-2:], ".")
+	}
 
-	return sanitizeFilename(host)
+	// Keep dots in folder names, but still sanitize for invalid characters
+	return sanitizeFolderName(baseDomain)
+}
+
+// sanitizeFolderName removes invalid characters for folder names but preserves dots
+func sanitizeFolderName(name string) string {
+	// Remove invalid characters for folder names (but keep dots)
+	invalidChars := regexp.MustCompile(`[<>:"/\\|?*\x00-\x1f]`)
+	name = invalidChars.ReplaceAllString(name, "-")
+
+	// Remove multiple consecutive hyphens (but not dots)
+	name = regexp.MustCompile(`-+`).ReplaceAllString(name, "-")
+
+	// Trim hyphens from start and end (but not dots)
+	name = strings.Trim(name, "-")
+
+	// Limit length
+	if len(name) > 100 {
+		name = name[:100]
+	}
+
+	// Ensure it's not empty
+	if name == "" {
+		name = "target"
+	}
+
+	return name
 }
 
 // sanitizeFilename removes invalid characters for filenames
@@ -102,6 +141,7 @@ func MoveCURLDDOSFile() error {
 }
 
 // ListDDOSTargetFiles lists all .txt files in ddos-targets directory
+// This function maintains backward compatibility with flat structure
 func ListDDOSTargetFiles() ([]string, error) {
 	if err := EnsureDDOSTargetsDir(); err != nil {
 		return nil, err
@@ -121,6 +161,99 @@ func ListDDOSTargetFiles() ([]string, error) {
 	}
 
 	return txtFiles, nil
+}
+
+// ListDDOSTargetFolders lists all site folders in ddos-targets directory
+func ListDDOSTargetFolders() ([]string, error) {
+	if err := EnsureDDOSTargetsDir(); err != nil {
+		return nil, err
+	}
+
+	dir := "ddos-targets"
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read ddos-targets directory: %w", err)
+	}
+
+	var folders []string
+	for _, file := range files {
+		if file.IsDir() {
+			folders = append(folders, file.Name())
+		}
+	}
+
+	return folders, nil
+}
+
+// ListDDOSTargetFilesInFolder lists all .txt files in a specific site folder
+func ListDDOSTargetFilesInFolder(folderName string) ([]string, error) {
+	if err := EnsureDDOSTargetsDir(); err != nil {
+		return nil, err
+	}
+
+	folderPath := filepath.Join("ddos-targets", folderName)
+	files, err := os.ReadDir(folderPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read folder %s: %w", folderName, err)
+	}
+
+	var txtFiles []string
+	for _, file := range files {
+		if !file.IsDir() && strings.HasSuffix(strings.ToLower(file.Name()), ".txt") {
+			txtFiles = append(txtFiles, filepath.Join(folderPath, file.Name()))
+		}
+	}
+
+	return txtFiles, nil
+}
+
+// GetFilenamePatternForAttackMode returns the filename pattern for a given attack mode
+func GetFilenamePatternForAttackMode(attackMode string) string {
+	switch attackMode {
+	case "rudy":
+		return "rudy-"
+	case "http2-stream-flood":
+		return "http2-stream-flood-"
+	case "flood":
+		return "flood-"
+	case "slowloris":
+		return "slowloris-"
+	case "mixed":
+		return "mixed-"
+	default:
+		return ""
+	}
+}
+
+// GetFilesMatchingTemplate finds files in a folder that match the template's attack mode
+func GetFilesMatchingTemplate(folderPath string, attackMode string) ([]string, error) {
+	files, err := os.ReadDir(folderPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read folder %s: %w", folderPath, err)
+	}
+
+	pattern := GetFilenamePatternForAttackMode(attackMode)
+	if pattern == "" {
+		// If no pattern, return all .txt files
+		var txtFiles []string
+		for _, file := range files {
+			if !file.IsDir() && strings.HasSuffix(strings.ToLower(file.Name()), ".txt") {
+				txtFiles = append(txtFiles, filepath.Join(folderPath, file.Name()))
+			}
+		}
+		return txtFiles, nil
+	}
+
+	var matchingFiles []string
+	for _, file := range files {
+		if !file.IsDir() && strings.HasSuffix(strings.ToLower(file.Name()), ".txt") {
+			if strings.HasPrefix(strings.ToLower(file.Name()), pattern) {
+				matchingFiles = append(matchingFiles, filepath.Join(folderPath, file.Name()))
+			}
+		}
+	}
+
+	return matchingFiles, nil
 }
 
 // NormalizeURL normalizes a URL for comparison

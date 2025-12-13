@@ -594,15 +594,23 @@ func (ts *TargetScanner) SaveResults(result *ScanResult) error {
 
 	siteName := ExtractSiteName(ts.config.TargetURL)
 
+	// Create site-specific folder
+	siteFolder := filepath.Join("ddos-targets", siteName)
+	if err := os.MkdirAll(siteFolder, 0755); err != nil {
+		return fmt.Errorf("failed to create site folder %s: %w", siteFolder, err)
+	}
+
 	for attackMode, endpoints := range result.ValidEndpoints {
 		if len(endpoints) == 0 {
 			continue
 		}
 
-		// Generate filename
+		// Generate filename (using sanitized site name for filename, but folder uses original)
 		methodName := string(attackMode)
-		filename := GenerateFileName(methodName, siteName)
-		filepath := filepath.Join("ddos-targets", filename)
+		// For filename, use sanitized version (with hyphens) to ensure compatibility
+		sanitizedSiteName := sanitizeFilename(siteName)
+		filename := GenerateFileName(methodName, sanitizedSiteName)
+		filepath := filepath.Join(siteFolder, filename)
 
 		// Write cURL commands to file
 		file, err := os.Create(filepath)
