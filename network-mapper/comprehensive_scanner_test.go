@@ -193,6 +193,7 @@ func TestDefaultComprehensiveScanner(t *testing.T) {
 
 	if result == nil {
 		t.Error("Scan result should not be nil")
+		return
 	}
 
 	if len(result.Hosts) != 1 {

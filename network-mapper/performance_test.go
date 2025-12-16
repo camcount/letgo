@@ -39,6 +39,7 @@ func TestMemoryUsageMonitoring(t *testing.T) {
 	memoryMonitor.ForceGarbageCollection()
 
 	// Clear references to allow GC
+	t.Logf("Allocated %d memory chunks for testing", len(memoryHogs))
 	memoryHogs = nil
 	runtime.GC()
 

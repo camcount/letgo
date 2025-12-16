@@ -444,7 +444,7 @@ func (rm *DefaultResultManager) writeWebServicesToFile(webServices []string, out
 	defer file.Close()
 
 	// Write header comment
-	header := fmt.Sprintf("# Web services discovered by Network Mapper\n")
+	header := "# Web services discovered by Network Mapper\n"
 	header += fmt.Sprintf("# Generated: %s\n", time.Now().Format("2006-01-02 15:04:05"))
 	header += fmt.Sprintf("# Total services: %d\n\n", len(webServices))
 
@@ -485,10 +485,10 @@ func (rm *DefaultResultManager) writeAuthServicesToFile(authServices []AuthServi
 	defer file.Close()
 
 	// Write header comment
-	header := fmt.Sprintf("# Authentication services discovered by Network Mapper\n")
+	header := "# Authentication services discovered by Network Mapper\n"
 	header += fmt.Sprintf("# Generated: %s\n", time.Now().Format("2006-01-02 15:04:05"))
 	header += fmt.Sprintf("# Total services: %d\n", len(authServices))
-	header += fmt.Sprintf("# Format: host:port|service|protocol|banner\n\n")
+	header += "# Format: host:port|service|protocol|banner\n\n"
 
 	if _, err := file.WriteString(header); err != nil {
 		return fmt.Errorf("failed to write header: %w", err)
@@ -531,10 +531,10 @@ func (rm *DefaultResultManager) writeDDoSTargetsToFile(ddosTargets []DDoSTarget,
 	defer file.Close()
 
 	// Write header comment
-	header := fmt.Sprintf("# DDoS targets discovered by Network Mapper\n")
+	header := "# DDoS targets discovered by Network Mapper\n"
 	header += fmt.Sprintf("# Generated: %s\n", time.Now().Format("2006-01-02 15:04:05"))
 	header += fmt.Sprintf("# Total targets: %d\n", len(ddosTargets))
-	header += fmt.Sprintf("# Format: cURL commands for DDoS testing\n\n")
+	header += "# Format: cURL commands for DDoS testing\n\n"
 
 	if _, err := file.WriteString(header); err != nil {
 		return fmt.Errorf("failed to write header: %w", err)
