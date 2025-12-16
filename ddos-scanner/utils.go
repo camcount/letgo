@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	
+
 	"github.com/letgo/paths"
 )
 
@@ -218,6 +218,8 @@ func GetFilenamePatternForAttackMode(attackMode string) string {
 		return "rudy-"
 	case "http2-stream-flood":
 		return "http2-stream-flood-"
+	case "tls-handshake-flood":
+		return "tls-handshake-flood-"
 	case "flood":
 		return "flood-"
 	case "slowloris":
@@ -258,34 +260,6 @@ func GetFilesMatchingTemplate(folderPath string, attackMode string) ([]string, e
 	}
 
 	return matchingFiles, nil
-}
-
-// NormalizeURL normalizes a URL for comparison
-func NormalizeURL(rawURL string) (string, error) {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return "", err
-	}
-
-	// Normalize scheme
-	if parsed.Scheme == "" {
-		parsed.Scheme = "https"
-	}
-
-	// Normalize path
-	if parsed.Path == "" {
-		parsed.Path = "/"
-	}
-
-	// Remove fragment
-	parsed.Fragment = ""
-
-	// Remove query if empty
-	if parsed.RawQuery == "" {
-		parsed.RawQuery = ""
-	}
-
-	return parsed.String(), nil
 }
 
 // IsSameDomain checks if two URLs are from the same domain
@@ -372,8 +346,7 @@ func ExtractHostname(targetURL string) string {
 	}
 
 	host = strings.ToLower(host)
-	
+
 	// Return the full hostname, sanitized for folder name
 	return sanitizeFolderName(host)
 }
-

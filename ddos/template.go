@@ -77,7 +77,7 @@ func LoadTemplateFile(filePath string) (*DDoSConfig, error) {
 		case "AttackMode":
 			mode := AttackMode(strings.ToLower(value))
 			switch mode {
-			case ModeFlood, ModeSlowloris, ModeMixed, ModeHTTP2StreamFlood, ModeRUDY:
+			case ModeFlood, ModeSlowloris, ModeMixed, ModeHTTP2StreamFlood, ModeRUDY, ModeTLSHandshakeFlood:
 				config.AttackMode = mode
 			default:
 				return nil, fmt.Errorf("invalid attack mode at line %d: %s", lineNum, value)
@@ -109,10 +109,11 @@ func LoadTemplateFile(filePath string) (*DDoSConfig, error) {
 		case "UseProxy":
 			config.UseProxy = parseBool(value)
 		case "ProxyListFile":
-			// Load proxies from file if specified
-			if proxies, err := loadProxiesFromFile(value); err == nil {
-				config.ProxyList = proxies
-			}
+			// Deprecated behavior: proxies are now always loaded from the
+			// validated proxy list (proxy/proxy.txt) at runtime.
+			// We intentionally do NOT load proxies here to avoid embedding
+			// unvalidated proxies into templates.
+			// The value is treated as a hint only and ignored by the engine.
 		case "RotateProxy":
 			config.RotateProxy = parseBool(value)
 		case "UseCustomUserAgents":
@@ -230,7 +231,12 @@ func SaveConfigAsTemplate(config *DDoSConfig, fileName string) (string, error) {
 	writer.WriteString("# PROXY CONFIGURATION\n")
 	writer.WriteString("# ==============================================================================\n")
 	writer.WriteString(fmt.Sprintf("UseProxy=%v\n", config.UseProxy))
-	if config.UseProxy && len(config.ProxyList) > 0 {
+	// Note: Proxies are always sourced from the validated proxy list:
+	//   proxy/proxy.txt
+	// The optional ProxyListFile key in a template is treated as a hint only
+	// and is not used to load proxies directly.
+	writer.WriteString("# ProxyListFile=proxy/proxy.txt\n")
+	if config.UseProxy {
 		writer.WriteString(fmt.Sprintf("RotateProxy=%v\n", config.RotateProxy))
 	}
 
@@ -267,6 +273,20 @@ func SaveConfigAsTemplate(config *DDoSConfig, fileName string) (string, error) {
 		writer.WriteString(fmt.Sprintf("MaxStreamsPerConn=%d\n", config.MaxStreamsPerConn))
 	}
 
+	// Write TLS Handshake Flood specific settings
+	if config.AttackMode == ModeTLSHandshakeFlood {
+		writer.WriteString("\n# ==============================================================================\n")
+		writer.WriteString("# TLS HANDSHAKE FLOOD SPECIFIC SETTINGS\n")
+		writer.WriteString("# ==============================================================================\n")
+		writer.WriteString(fmt.Sprintf("ForceTLS=%v\n", config.ForceTLS))
+		if config.TLSMinVersion > 0 {
+			writer.WriteString(fmt.Sprintf("TLSMinVersion=0x%04x\n", config.TLSMinVersion))
+		}
+		if config.TLSMaxVersion > 0 {
+			writer.WriteString(fmt.Sprintf("TLSMaxVersion=0x%04x\n", config.TLSMaxVersion))
+		}
+	}
+
 	writer.WriteString("\n# ==============================================================================\n")
 	writer.WriteString("# ADVANCED HTTP SETTINGS\n")
 	writer.WriteString("# ==============================================================================\n")
@@ -275,21 +295,12 @@ func SaveConfigAsTemplate(config *DDoSConfig, fileName string) (string, error) {
 		writer.WriteString(fmt.Sprintf("AdaptiveRateLimit=%v\n", config.AdaptiveRateLimit))
 	}
 
-	// Write TLS settings
-	if config.UseTLSAttack {
+	// Write TLS renegotiation settings (used with Slowloris)
+	if config.TLSRenegotiation {
 		writer.WriteString("\n# ==============================================================================\n")
-		writer.WriteString("# TLS/SSL ATTACK CONFIGURATION\n")
+		writer.WriteString("# TLS RENEGOTIATION SETTINGS\n")
 		writer.WriteString("# ==============================================================================\n")
-		writer.WriteString(fmt.Sprintf("UseTLSAttack=%v\n", config.UseTLSAttack))
-		writer.WriteString(fmt.Sprintf("ForceTLS=%v\n", config.ForceTLS))
-		writer.WriteString(fmt.Sprintf("TLSHandshakeFlood=%v\n", config.TLSHandshakeFlood))
 		writer.WriteString(fmt.Sprintf("TLSRenegotiation=%v\n", config.TLSRenegotiation))
-		if config.TLSMinVersion > 0 {
-			writer.WriteString(fmt.Sprintf("TLSMinVersion=0x%04x\n", config.TLSMinVersion))
-		}
-		if config.TLSMaxVersion > 0 {
-			writer.WriteString(fmt.Sprintf("TLSMaxVersion=0x%04x\n", config.TLSMaxVersion))
-		}
 	}
 
 	// Note: Custom HTTP headers are obtained from cURL config, not stored in template

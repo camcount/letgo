@@ -1,0 +1,7 @@
+{
+  "auto_os_detect": false,
+  "auto_service_detect": true,
+  "default_format": "text",
+  "default_threads": 50,
+  "default_timeout": "5s"
+}

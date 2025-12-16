@@ -2,8 +2,8 @@
 # Target: https://staffportal.airportthai.co.th/fo/account/login
 # Hostname: staffportal.airportthai.co.th
 # Attack Method: rudy
-# Generated: 2025-12-13T21:34:40+07:00
-# Total valid endpoints: 1
+# Generated: 2025-12-16T00:36:24+07:00
+# Total valid endpoints (after ranking/limits): 1
 
 curl \
   -X \

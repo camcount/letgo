@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/letgo/ddos"
-	"github.com/letgo/ddos-scanner"
+	ddosscanner "github.com/letgo/ddos-scanner"
 	"github.com/letgo/scanner"
 	"github.com/letgo/secretscanner"
 )
@@ -515,13 +515,14 @@ func (m *Menu) scanDDOSTarget() {
 	fmt.Println("  [3] Mixed (Flood + Slowloris)")
 	fmt.Println("  [4] HTTP/2 Stream Flood")
 	fmt.Println("  [5] RUDY (Slow HTTP POST)")
-	fmt.Println("  [6] All Methods")
-	fmt.Print("\nSelect attack method(s) to scan for (comma-separated, e.g., 1,2,3 or 6 for all): ")
+	fmt.Println("  [6] TLS Handshake Flood")
+	fmt.Println("  [7] All Methods")
+	fmt.Print("\nSelect attack method(s) to scan for (comma-separated, e.g., 1,2,3 or 7 for all): ")
 	methodsStr, _ := reader.ReadString('\n')
 	methodsStr = strings.TrimSpace(methodsStr)
 
 	var selectedMethods []ddos.AttackMode
-	if methodsStr == "6" || strings.Contains(methodsStr, "all") || strings.Contains(methodsStr, "All") {
+	if methodsStr == "7" || strings.Contains(methodsStr, "all") || strings.Contains(methodsStr, "All") {
 		// Select all methods
 		selectedMethods = []ddos.AttackMode{
 			ddos.ModeFlood,
@@ -529,6 +530,7 @@ func (m *Menu) scanDDOSTarget() {
 			ddos.ModeMixed,
 			ddos.ModeHTTP2StreamFlood,
 			ddos.ModeRUDY,
+			ddos.ModeTLSHandshakeFlood,
 		}
 	} else {
 		// Parse selected methods
@@ -546,6 +548,8 @@ func (m *Menu) scanDDOSTarget() {
 				selectedMethods = append(selectedMethods, ddos.ModeHTTP2StreamFlood)
 			case "5":
 				selectedMethods = append(selectedMethods, ddos.ModeRUDY)
+			case "6":
+				selectedMethods = append(selectedMethods, ddos.ModeTLSHandshakeFlood)
 			}
 		}
 	}
@@ -576,6 +580,77 @@ func (m *Menu) scanDDOSTarget() {
 		}
 	}
 
+	// Recommended default limits per attack method based on best practices
+	recommendedDefaults := map[ddos.AttackMode]int{
+		ddos.ModeFlood:             25, // Fast static assets, can use many endpoints effectively
+		ddos.ModeSlowloris:         12, // Needs long connections, fewer endpoints work better
+		ddos.ModeMixed:             20, // Combination approach, moderate number
+		ddos.ModeHTTP2StreamFlood:  25, // Fast HTTP/2 endpoints, can use many
+		ddos.ModeRUDY:              10, // Needs large body support, fewer suitable endpoints
+		ddos.ModeTLSHandshakeFlood: 20, // Fast TLS handshakes, moderate number effective
+	}
+
+	// Ask for per-method maximum number of valid cURL endpoints (optional)
+	maxValidPerMethod := make(map[ddos.AttackMode]int)
+	fmt.Println("\nConfigure maximum valid cURL endpoints per attack method:")
+	fmt.Println("(Press Enter to use recommended default, or enter a number to override)")
+
+	for _, mode := range selectedMethods {
+		var label string
+		var description string
+		switch mode {
+		case ddos.ModeFlood:
+			label = "flood"
+			description = "Fast static assets work best"
+		case ddos.ModeSlowloris:
+			label = "slowloris"
+			description = "Long connections, fewer endpoints"
+		case ddos.ModeMixed:
+			label = "mixed"
+			description = "Combination of flood and slowloris"
+		case ddos.ModeHTTP2StreamFlood:
+			label = "http2-stream-flood"
+			description = "Fast HTTP/2 endpoints"
+		case ddos.ModeRUDY:
+			label = "rudy"
+			description = "Large body support required"
+		case ddos.ModeTLSHandshakeFlood:
+			label = "tls-handshake-flood"
+			description = "Fast TLS handshakes"
+		default:
+			label = string(mode)
+			description = ""
+		}
+
+		defaultValue := 0
+		if def, ok := recommendedDefaults[mode]; ok {
+			defaultValue = def
+		}
+
+		if description != "" {
+			fmt.Printf("Max valid cURL for %s (default: %d, recommended for %s): ", label, defaultValue, description)
+		} else {
+			fmt.Printf("Max valid cURL for %s (default: %d): ", label, defaultValue)
+		}
+		limitStr, _ := reader.ReadString('\n')
+		limitStr = strings.TrimSpace(limitStr)
+
+		if limitStr == "" {
+			// Use recommended default
+			if defaultValue > 0 {
+				maxValidPerMethod[mode] = defaultValue
+			}
+		} else {
+			// User provided a value
+			if v, err := strconv.Atoi(limitStr); err == nil && v > 0 {
+				maxValidPerMethod[mode] = v
+			} else if v == 0 {
+				// User explicitly set 0, meaning no limit
+				// Don't add to map, which means no limit
+			}
+		}
+	}
+
 	// Get URLs from user and scan immediately
 	fmt.Println("\nEnter target URLs (one per line, press Enter on empty line when done):")
 	fmt.Println("Example:")
@@ -584,20 +659,20 @@ func (m *Menu) scanDDOSTarget() {
 	fmt.Println("  https://ava.in.th/login")
 	fmt.Println("  (press Enter on empty line to finish)")
 	fmt.Println()
-	
+
 	var inputURLs []string
 	var allResults []*ddosscanner.ScanResult
 	var combinedValidEndpoints = make(map[ddos.AttackMode][]ddosscanner.EndpointResult)
 	var totalDiscovered, totalValidated int
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	
+
 	// Start scanning immediately as URLs are entered
 	for {
 		fmt.Print("URL (or Enter to finish): ")
 		urlInput, _ := reader.ReadString('\n')
 		urlInput = strings.TrimSpace(urlInput)
-		
+
 		if urlInput == "" {
 			// Empty line - check if we have URLs to process
 			if len(inputURLs) > 0 {
@@ -606,40 +681,41 @@ func (m *Menu) scanDDOSTarget() {
 			fmt.Println("  ⚠ Please enter at least one URL")
 			continue
 		}
-		
+
 		// Validate URL
 		parsed, err := url.Parse(urlInput)
 		if err != nil {
 			fmt.Printf("  ⚠ Invalid URL skipped: %s\n", urlInput)
 			continue
 		}
-		
+
 		// Set default protocol if missing
 		if parsed.Scheme == "" {
 			parsed.Scheme = "https"
 			urlInput = parsed.String()
 		}
-		
+
 		inputURLs = append(inputURLs, urlInput)
-		
+
 		// Truncate URL for display if too long
 		displayURL := urlInput
 		if len(displayURL) > 50 {
 			displayURL = displayURL[:47] + "..."
 		}
-		
+
 		fmt.Printf("  ✓ Added: %s\n", urlInput)
 		fmt.Print("  → Scanning... ")
-		
+
 		// Create scan config for this URL
 		config := ddosscanner.ScanConfig{
-			TargetURL:     urlInput,
-			AttackMethods: selectedMethods,
-			MaxThreads:    threads,
-			Timeout:       timeout,
-			MaxDepth:      0, // No crawling
-			MaxPages:      0, // No crawling
-			UserAgent:     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+			TargetURL:         urlInput,
+			AttackMethods:     selectedMethods,
+			MaxThreads:        threads,
+			Timeout:           timeout,
+			MaxDepth:          0, // No crawling
+			MaxPages:          0, // No crawling
+			UserAgent:         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+			MaxValidPerMethod: maxValidPerMethod,
 			OnProgress: func(phase string, current, total int, percentage float64) {
 				// Real-time progress display with cleaner format
 				if total > 0 {
@@ -654,56 +730,56 @@ func (m *Menu) scanDDOSTarget() {
 				os.Stdout.Sync() // Force flush for real-time display
 			},
 		}
-		
+
 		// Create scanner and scan immediately
 		scannerInstance, err := ddosscanner.NewTargetScanner(config)
 		if err != nil {
 			fmt.Printf("\r  ⚠ Error creating scanner for %s: %v\n", urlInput, err)
 			continue
 		}
-		
+
 		// Scan this URL
 		result, err := scannerInstance.Scan(ctx)
 		if err != nil {
 			fmt.Printf("\r  ⚠ Error scanning %s: %v\n", urlInput, err)
 			continue
 		}
-		
+
 		// Clear progress line and show result
 		fmt.Print("\r" + strings.Repeat(" ", 100) + "\r")
-		
+
 		// Count valid endpoints for this URL
 		validCount := 0
 		for _, endpoints := range result.ValidEndpoints {
 			validCount += len(endpoints)
 		}
-		
+
 		if validCount > 0 {
 			fmt.Printf("  ✓ Scanned: %s - Found %d valid endpoint(s)\n", urlInput, validCount)
 		} else {
 			fmt.Printf("  ⚠ Scanned: %s - No valid endpoints found\n", urlInput)
 		}
-		
+
 		allResults = append(allResults, result)
 		totalDiscovered += result.TotalDiscovered
 		totalValidated += result.TotalValidated
-		
+
 		// Combine valid endpoints
 		for attackMode, endpoints := range result.ValidEndpoints {
 			combinedValidEndpoints[attackMode] = append(combinedValidEndpoints[attackMode], endpoints...)
 		}
-		
+
 		// Save result immediately
 		if err := scannerInstance.SaveResults(result); err != nil {
 			fmt.Printf("  ⚠ Error saving results for %s: %v\n", urlInput, err)
 		}
 	}
-	
+
 	if len(inputURLs) == 0 {
 		fmt.Println("Error: No valid URLs provided.")
 		return
 	}
-	
+
 	fmt.Printf("\n✓ Total URLs scanned: %d\n", len(inputURLs))
 
 	// Results are already collected from real-time scanning above
@@ -753,7 +829,7 @@ func (m *Menu) scanDDOSTarget() {
 	if len(allResults) > 0 {
 		fmt.Println("\n" + strings.Repeat("=", 70))
 		fmt.Println("Saving results to files...")
-		
+
 		// Results are already saved during real-time scanning
 		// Just show summary of saved files
 		if len(allResults) > 1 {
@@ -793,7 +869,7 @@ func (m *Menu) scanDDOSTarget() {
 				}
 			}
 		}
-		
+
 		if !hasValidEndpoints {
 			fmt.Println("\n⚠ No endpoints met the validation criteria for selected attack methods.")
 			fmt.Println("  Please try different URLs or attack methods.")

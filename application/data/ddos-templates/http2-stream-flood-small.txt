@@ -1,0 +1,46 @@
+# DDoS Attack Configuration Template
+# Auto-generated template
+# Note: Target URL, HTTP Method, Headers, and Body are obtained from cURL config
+
+# ==============================================================================
+# ATTACK MODE
+# ==============================================================================
+AttackMode=http2-stream-flood
+
+# ==============================================================================
+# PERFORMANCE SETTINGS
+# ==============================================================================
+MaxThreads=1000
+DurationSeconds=6000
+TimeoutSeconds=5
+RateLimit=0
+
+# ==============================================================================
+# HTTP CONFIGURATION
+# ==============================================================================
+FollowRedirects=false
+ReuseConnections=true
+
+# ==============================================================================
+# PROXY CONFIGURATION
+# ==============================================================================
+UseProxy=true
+# ProxyListFile=proxy/proxy.txt
+RotateProxy=true
+
+# ==============================================================================
+# USER AGENT CONFIGURATION
+# ==============================================================================
+UseCustomUserAgents=true
+UserAgentFilePath=D:\Porhong\Dev\Local-Letgo\letgo\application\data\user-agent.txt
+
+# ==============================================================================
+# HTTP/2 CONFIGURATION
+# ==============================================================================
+UseHTTP2=false
+MaxStreamsPerConn=100
+
+# ==============================================================================
+# ADVANCED HTTP SETTINGS
+# ==============================================================================
+UsePipelining=false

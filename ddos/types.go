@@ -20,6 +20,8 @@ const (
 	ModeHTTP2StreamFlood AttackMode = "http2-stream-flood"
 	// ModeRUDY sends slow HTTP POST requests (R-U-Dead-Yet)
 	ModeRUDY AttackMode = "rudy"
+	// ModeTLSHandshakeFlood initiates many TLS handshakes without completing HTTP requests
+	ModeTLSHandshakeFlood AttackMode = "tls-handshake-flood"
 )
 
 // DDoSConfig holds configuration for DDoS attack
@@ -50,10 +52,10 @@ type DDoSConfig struct {
 	UserAgentFilePath   string // Path to file containing custom user agents (one per line)
 
 	// TLS Attack settings
-	UseTLSAttack      bool     // Enable TLS attack combinations
+	UseTLSAttack      bool     // Deprecated: Use AttackMode=ModeTLSHandshakeFlood instead
 	ForceTLS          bool     // Force TLS even on HTTP URLs
-	TLSHandshakeFlood bool     // Initiate many TLS handshakes without completing HTTP requests
-	TLSRenegotiation  bool     // Force TLS renegotiation on connections
+	TLSHandshakeFlood bool     // Deprecated: Use AttackMode=ModeTLSHandshakeFlood instead
+	TLSRenegotiation  bool     // Force TLS renegotiation on connections (used with Slowloris)
 	TLSMinVersion     uint16   // Minimum TLS version (e.g., tls.VersionTLS10, 0 = default)
 	TLSMaxVersion     uint16   // Maximum TLS version (e.g., tls.VersionTLS13, 0 = default)
 	TLSCipherSuites   []uint16 // Specific cipher suites to use (optional, nil = default)
@@ -81,6 +83,8 @@ type AttackStats struct {
 	AvgResponseTime   time.Duration
 	ElapsedTime       time.Duration
 	RequestsPerSec    float64
+	ActiveProxies     int
+	DisabledProxies   int
 }
 
 // DDoSAttack represents an active DDoS attack
@@ -104,8 +108,14 @@ type DDoSAttack struct {
 	userAgents     []string // List of user agents to rotate from
 	userAgentIndex int64
 
+	// Proxy health tracking
+	proxies        []string        // Working copy of proxies used by this attack
+	proxyFailures  map[string]int  // Consecutive failure count per proxy
+	proxyDisabled  map[string]bool // Proxies marked as unhealthy
+	proxyFailLimit int             // Failures before marking a proxy unhealthy
+	proxyMu        sync.Mutex      // Protects proxyFailures/proxyDisabled
+
 	startTime time.Time
 	running   bool
 	mu        sync.Mutex
 }
-

@@ -8,7 +8,8 @@ import (
 
 	consolemenu "github.com/letgo/console-menu"
 	"github.com/letgo/cracker"
-	"github.com/letgo/ddos-scanner"
+	ddosscanner "github.com/letgo/ddos-scanner"
+	networkmapper "github.com/letgo/network-mapper"
 	"github.com/letgo/paths"
 )
 
@@ -101,6 +102,66 @@ func ensureDDOSTargetsExist() {
 		ddosTargetsDir := filepath.Join(dataDir, "ddos-targets")
 		if _, err := os.Stat(filepath.Join(ddosTargetsDir, "cURL-DDOS.txt")); err == nil {
 			fmt.Println("Moved cURL-DDOS.txt to application/data/ddos-targets/")
+		}
+	}
+}
+
+// Ensure network-mapper directories and configuration files exist
+func ensureNetworkMapperExists() {
+	configManager := networkmapper.NewConfigManager()
+
+	// Create all required directories
+	if err := configManager.EnsureDirectories(); err != nil {
+		fmt.Printf("Error creating network-mapper directories: %v\n", err)
+		return
+	}
+
+	// Initialize default configuration files
+	if err := configManager.InitializeDefaultFiles(); err != nil {
+		fmt.Printf("Error creating network-mapper configuration files: %v\n", err)
+		return
+	}
+
+	// Check what was created and inform user
+	networkMapperDir := configManager.GetNetworkMapperDir()
+	if _, err := os.Stat(networkMapperDir); err == nil {
+		fmt.Println("✓ Network mapper directories initialized")
+
+		// Check for specific directories
+		dirs := []struct {
+			path string
+			name string
+		}{
+			{configManager.GetResultsDir(), "results"},
+			{configManager.GetProfilesDir(), "profiles"},
+			{configManager.GetConfigDir(), "config"},
+		}
+
+		for _, dir := range dirs {
+			if _, err := os.Stat(dir.path); err == nil {
+				// Only show message if directory was just created
+				if entries, err := os.ReadDir(dir.path); err == nil && len(entries) == 0 {
+					fmt.Printf("  → Created %s directory\n", dir.name)
+				}
+			}
+		}
+
+		// Check for configuration files
+		configFiles := []struct {
+			path string
+			name string
+		}{
+			{filepath.Join(configManager.GetConfigDir(), "settings.json"), "settings.json"},
+			{filepath.Join(configManager.GetConfigDir(), "network-mapper.txt"), "network-mapper.txt"},
+		}
+
+		for _, file := range configFiles {
+			if _, err := os.Stat(file.path); err == nil {
+				// Check if file was just created (small size indicates new file)
+				if info, err := os.Stat(file.path); err == nil && info.Size() > 0 {
+					fmt.Printf("  → Created %s configuration\n", file.name)
+				}
+			}
 		}
 	}
 }
@@ -297,6 +358,9 @@ func main() {
 
 	// Ensure DDoS templates directory and base template exist
 	ensureDDoSTemplatesExist()
+
+	// Ensure network-mapper directories and configuration files exist
+	ensureNetworkMapperExists()
 
 	config := cracker.AttackConfig{
 		MaxThreads:   10,

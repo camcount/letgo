@@ -34,18 +34,19 @@ func (m *Menu) Display() {
 	fmt.Println("  2) Scan for Secrets/Env/Tokens")
 	fmt.Println("  3) Scan Path Traversal (LFI/RFI)")
 	fmt.Println("  4) Scan Target for DDoS cURLs")
+	fmt.Println("  5) Network Mapper (NMAP-like)")
 	fmt.Println("[Generate]")
-	fmt.Println("  5) Generate User List")
-	fmt.Println("  6) Generate Password List")
-	fmt.Println("  7) Generate User Agents")
+	fmt.Println("  6) Generate User List")
+	fmt.Println("  7) Generate Password List")
+	fmt.Println("  8) Generate User Agents")
 	fmt.Println("[Attack]")
-	fmt.Println("  8) Attack Brute force with cURL")
-	fmt.Println("  9) DDoS Attack (cURL)")
+	fmt.Println("  9) Attack Brute force with cURL")
+	fmt.Println("  10) DDoS Attack (cURL)")
 	fmt.Println("[Proxy]")
-	fmt.Println("  10) Scrape Proxies")
-	fmt.Println("  11) Validate Proxies")
-	fmt.Println("  12) Exit")
-	fmt.Print("Choose an option [1-12]: ")
+	fmt.Println("  11) Scrape Proxies")
+	fmt.Println("  12) Validate Proxies")
+	fmt.Println("  13) Exit")
+	fmt.Print("Choose an option [1-13]: ")
 }
 
 // Process handles the user's menu choice
@@ -64,20 +65,22 @@ func (m *Menu) Process() bool {
 	case "4":
 		m.scanDDOSTarget()
 	case "5":
-		m.generateUserList()
+		m.networkMapper()
 	case "6":
-		m.generatePasswordList()
+		m.generateUserList()
 	case "7":
-		m.generateUserAgents()
+		m.generatePasswordList()
 	case "8":
-		m.attackWithCurl()
+		m.generateUserAgents()
 	case "9":
-		m.ddosAttack()
+		m.attackWithCurl()
 	case "10":
-		m.scrapeProxies()
+		m.ddosAttack()
 	case "11":
-		m.validateProxies()
+		m.scrapeProxies()
 	case "12":
+		m.validateProxies()
+	case "13":
 		fmt.Println("Exiting...")
 		return false
 	default:

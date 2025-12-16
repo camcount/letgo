@@ -2,8 +2,10 @@ package ddosscanner
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -37,32 +39,53 @@ func NewValidator(config ScanConfig) *Validator {
 // ValidateEndpoint validates an endpoint against all selected attack methods
 func (v *Validator) ValidateEndpoint(ctx context.Context, endpointURL, method string, discoveredBy string) EndpointResult {
 	result := EndpointResult{
-		URL:            endpointURL,
-		Method:         method,
-		IsValid:        make(map[ddos.AttackMode]bool),
+		URL:              endpointURL,
+		Method:           method,
+		IsValid:          make(map[ddos.AttackMode]bool),
 		ValidationErrors: make(map[ddos.AttackMode]string),
-		DiscoveredBy:   discoveredBy,
-		AssetType:      detectAssetType(endpointURL, method),
+		DiscoveredBy:     discoveredBy,
+		AssetType:        detectAssetType(endpointURL, method),
 	}
 
 	// First, perform basic connectivity test
 	basicInfo := v.testBasicConnectivity(ctx, endpointURL, method)
-	if basicInfo.StatusCode == 0 {
-		// Endpoint is not reachable
-		for _, attackMode := range v.config.AttackMethods {
-			result.IsValid[attackMode] = false
-			result.ValidationErrors[attackMode] = "Endpoint not reachable"
+
+	// Check if TLS handshake flood is in the attack methods
+	hasTLSHandshakeFlood := false
+	for _, attackMode := range v.config.AttackMethods {
+		if attackMode == ddos.ModeTLSHandshakeFlood {
+			hasTLSHandshakeFlood = true
+			break
 		}
-		return result
 	}
 
-	result.StatusCode = basicInfo.StatusCode
-	result.ResponseTime = basicInfo.ResponseTime
-	result.ResponseSize = basicInfo.ResponseSize
-	result.Headers = basicInfo.Headers
+	// For TLS handshake flood, we still want to test TLS even if HTTP request fails
+	// because TLS handshake flood doesn't complete HTTP requests
+	if basicInfo.StatusCode == 0 {
+		// If we have TLS handshake flood, test TLS support anyway
+		if hasTLSHandshakeFlood {
+			result.SupportsTLS, result.TLSHandshakeTime = v.testTLSSupportWithTiming(ctx, endpointURL)
+			// Continue validation for TLS handshake flood even if HTTP failed
+		} else {
+			// Endpoint is not reachable for other attack modes
+			for _, attackMode := range v.config.AttackMethods {
+				result.IsValid[attackMode] = false
+				result.ValidationErrors[attackMode] = "Endpoint not reachable"
+			}
+			return result
+		}
+	} else {
+		result.StatusCode = basicInfo.StatusCode
+		result.ResponseTime = basicInfo.ResponseTime
+		result.ResponseSize = basicInfo.ResponseSize
+		result.Headers = basicInfo.Headers
 
-	// Test HTTP/2 support
-	result.SupportsHTTP2 = v.testHTTP2Support(ctx, endpointURL)
+		// Test HTTP/2 support
+		result.SupportsHTTP2 = v.testHTTP2Support(ctx, endpointURL)
+
+		// Test TLS handshake support and measure handshake time
+		result.SupportsTLS, result.TLSHandshakeTime = v.testTLSSupportWithTiming(ctx, endpointURL)
+	}
 
 	// Test connection keep-alive
 	result.KeepsConnection = v.testKeepAlive(ctx, endpointURL, method)
@@ -184,6 +207,68 @@ func (v *Validator) testHTTP2Support(ctx context.Context, endpointURL string) bo
 	return resp.ProtoMajor == 2
 }
 
+// testTLSSupportWithTiming tests if endpoint supports TLS handshake and measures handshake time
+func (v *Validator) testTLSSupportWithTiming(ctx context.Context, endpointURL string) (bool, time.Duration) {
+	parsed, err := url.Parse(endpointURL)
+	if err != nil {
+		return false, 0
+	}
+
+	// TLS requires HTTPS
+	if parsed.Scheme != "https" {
+		return false, 0
+	}
+
+	// Extract host and port
+	host := parsed.Hostname()
+	port := parsed.Port()
+	if port == "" {
+		port = "443" // Default HTTPS port
+	}
+
+	// Test TLS handshake by attempting to establish a TLS connection
+	// This mimics what the TLS handshake flood attack does
+	return v.performTLSHandshakeTestWithTiming(ctx, host, port)
+}
+
+// testTLSSupport tests if endpoint supports TLS handshake (backward compatibility)
+func (v *Validator) testTLSSupport(ctx context.Context, endpointURL string) bool {
+	supports, _ := v.testTLSSupportWithTiming(ctx, endpointURL)
+	return supports
+}
+
+// performTLSHandshakeTestWithTiming performs a TLS handshake test and measures the time taken
+func (v *Validator) performTLSHandshakeTestWithTiming(ctx context.Context, host, port string) (bool, time.Duration) {
+	dialer := &net.Dialer{
+		Timeout: 5 * time.Second,
+	}
+
+	// Create TLS config
+	tlsConfig := &tls.Config{
+		ServerName:         host,
+		InsecureSkipVerify: false, // Verify certificate
+	}
+
+	// Measure handshake time
+	start := time.Now()
+	conn, err := tls.DialWithDialer(dialer, "tcp", host+":"+port, tlsConfig)
+	handshakeTime := time.Since(start)
+
+	if err != nil {
+		return false, 0
+	}
+	defer conn.Close()
+
+	// If handshake succeeds, endpoint supports TLS
+	return true, handshakeTime
+}
+
+// performTLSHandshakeTest performs a TLS handshake test without completing HTTP request (backward compatibility)
+func (v *Validator) performTLSHandshakeTest(ctx context.Context, host, port string) bool {
+	supports, _ := v.performTLSHandshakeTestWithTiming(ctx, host, port)
+	return supports
+}
+
 // testKeepAlive tests if connection supports keep-alive
 func (v *Validator) testKeepAlive(ctx context.Context, endpointURL, method string) bool {
 	req, err := http.NewRequestWithContext(ctx, method, endpointURL, nil)
@@ -288,12 +373,12 @@ func (v *Validator) testLargeBody(ctx context.Context, endpointURL string) (bool
 // findMaxBodySize finds the maximum body size accepted
 func (v *Validator) findMaxBodySize(ctx context.Context, endpointURL string) (bool, int64) {
 	sizes := []int64{
-		1024,              // 1KB
-		10 * 1024,         // 10KB
-		100 * 1024,        // 100KB
-		1024 * 1024,       // 1MB
-		5 * 1024 * 1024,   // 5MB
-		10 * 1024 * 1024,  // 10MB
+		1024,             // 1KB
+		10 * 1024,        // 10KB
+		100 * 1024,       // 100KB
+		1024 * 1024,      // 1MB
+		5 * 1024 * 1024,  // 5MB
+		10 * 1024 * 1024, // 10MB
 	}
 
 	for _, size := range sizes {
@@ -333,16 +418,18 @@ func (v *Validator) findMaxBodySize(ctx context.Context, endpointURL string) (bo
 
 // validateAgainstCriteria validates endpoint against specific attack method criteria
 func (v *Validator) validateAgainstCriteria(ctx context.Context, result EndpointResult, criteria ValidationCriteria, attackMode ddos.AttackMode) (bool, string) {
-	// Check status code
-	statusValid := false
-	for _, code := range criteria.RequiredStatusCodes {
-		if result.StatusCode == code {
-			statusValid = true
-			break
+	// Check status code (skip if no status codes are required, e.g., for TLS handshake flood)
+	if len(criteria.RequiredStatusCodes) > 0 {
+		statusValid := false
+		for _, code := range criteria.RequiredStatusCodes {
+			if result.StatusCode == code {
+				statusValid = true
+				break
+			}
 		}
-	}
-	if !statusValid {
-		return false, fmt.Sprintf("Status code %d not in required codes %v", result.StatusCode, criteria.RequiredStatusCodes)
+		if !statusValid {
+			return false, fmt.Sprintf("Status code %d not in required codes %v", result.StatusCode, criteria.RequiredStatusCodes)
+		}
 	}
 
 	// Check HTTPS requirement
@@ -350,6 +437,13 @@ func (v *Validator) validateAgainstCriteria(ctx context.Context, result Endpoint
 		parsed, err := url.Parse(result.URL)
 		if err != nil || parsed.Scheme != "https" {
 			return false, "HTTPS required but URL is not HTTPS"
+		}
+	}
+
+	// Check TLS requirement
+	if criteria.RequiresTLS {
+		if !result.SupportsTLS {
+			return false, "TLS handshake support required but not available"
 		}
 	}
 
@@ -409,6 +503,20 @@ func (v *Validator) validateAgainstCriteria(ctx context.Context, result Endpoint
 		}
 	}
 
+	// Check TLS handshake time (for TLS handshake flood optimization)
+	if criteria.MaxTLSHandshakeTime > 0 && attackMode == ddos.ModeTLSHandshakeFlood {
+		if result.TLSHandshakeTime == 0 || result.TLSHandshakeTime > criteria.MaxTLSHandshakeTime {
+			return false, fmt.Sprintf("TLS handshake time %v exceeds maximum %v", result.TLSHandshakeTime, criteria.MaxTLSHandshakeTime)
+		}
+	}
+
+	// Check concurrent TLS handshakes (for TLS handshake flood)
+	if criteria.MinConcurrentTLSHandshakes > 0 && attackMode == ddos.ModeTLSHandshakeFlood {
+		if !v.testConcurrentTLSHandshakes(ctx, result.URL, criteria.MinConcurrentTLSHandshakes) {
+			return false, fmt.Sprintf("Endpoint does not handle at least %d concurrent TLS handshakes", criteria.MinConcurrentTLSHandshakes)
+		}
+	}
+
 	return true, ""
 }
 
@@ -452,6 +560,43 @@ func (v *Validator) testConcurrency(ctx context.Context, endpointURL, method str
 
 	// At least 70% should succeed
 	return successCount >= (numRequests * 70 / 100)
+}
+
+// testConcurrentTLSHandshakes tests if endpoint can handle multiple concurrent TLS handshakes
+func (v *Validator) testConcurrentTLSHandshakes(ctx context.Context, endpointURL string, minSuccess int) bool {
+	parsed, err := url.Parse(endpointURL)
+	if err != nil {
+		return false
+	}
+
+	host := parsed.Hostname()
+	port := parsed.Port()
+	if port == "" {
+		port = "443"
+	}
+
+	const numHandshakes = 10
+	var wg sync.WaitGroup
+	successCount := 0
+	var mu sync.Mutex
+
+	for i := 0; i < numHandshakes; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			supports, _ := v.performTLSHandshakeTestWithTiming(ctx, host, port)
+			if supports {
+				mu.Lock()
+				successCount++
+				mu.Unlock()
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Must have at least minSuccess successful handshakes
+	return successCount >= minSuccess
 }
 
 // hasAnyValid checks if endpoint is valid for any attack method
@@ -519,7 +664,7 @@ func (v *Validator) generateCurlCommand(result EndpointResult) string {
 // detectAssetType detects the type of asset from URL and method
 func detectAssetType(endpointURL, method string) string {
 	urlLower := strings.ToLower(endpointURL)
-	
+
 	// Check file extensions
 	if strings.Contains(urlLower, ".js") || strings.Contains(urlLower, "/js/") || strings.Contains(urlLower, "/javascript/") {
 		return "js"
@@ -528,12 +673,12 @@ func detectAssetType(endpointURL, method string) string {
 		return "css"
 	}
 	if strings.Contains(urlLower, ".png") || strings.Contains(urlLower, ".jpg") || strings.Contains(urlLower, ".jpeg") ||
-	   strings.Contains(urlLower, ".gif") || strings.Contains(urlLower, ".svg") || strings.Contains(urlLower, ".webp") ||
-	   strings.Contains(urlLower, ".ico") || strings.Contains(urlLower, "/img/") || strings.Contains(urlLower, "/images/") {
+		strings.Contains(urlLower, ".gif") || strings.Contains(urlLower, ".svg") || strings.Contains(urlLower, ".webp") ||
+		strings.Contains(urlLower, ".ico") || strings.Contains(urlLower, "/img/") || strings.Contains(urlLower, "/images/") {
 		return "image"
 	}
 	if strings.Contains(urlLower, ".woff") || strings.Contains(urlLower, ".woff2") || strings.Contains(urlLower, ".ttf") ||
-	   strings.Contains(urlLower, ".otf") || strings.Contains(urlLower, "/fonts/") {
+		strings.Contains(urlLower, ".otf") || strings.Contains(urlLower, "/fonts/") {
 		return "font"
 	}
 	if strings.Contains(urlLower, "/api/") {
@@ -548,7 +693,6 @@ func detectAssetType(endpointURL, method string) string {
 	if strings.Contains(urlLower, "/static/") || strings.Contains(urlLower, "/assets/") || strings.Contains(urlLower, "/public/") {
 		return "static"
 	}
-	
+
 	return "html"
 }
-

