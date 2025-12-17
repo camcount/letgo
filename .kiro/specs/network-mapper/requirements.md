@@ -15,6 +15,10 @@ This document specifies the requirements for a network mapping and port scanning
 - **Scan_Profile**: A predefined configuration of scan parameters for common use cases
 - **Stealth_Scan**: A scanning technique designed to avoid detection by target systems
 - **Aggressive_Scan**: A comprehensive scan that includes service detection, OS fingerprinting, and script scanning
+- **IP_Resolution**: The process of resolving hostnames to their underlying IP addresses
+- **Protection_Detection**: The identification of CDN, WAF, and other protection services in front of target hosts
+- **CDN_Service**: Content Delivery Network services like Cloudflare, Fastly, CloudFront that proxy traffic
+- **WAF_Service**: Web Application Firewall services that filter and monitor HTTP traffic
 
 ## Requirements
 
@@ -125,3 +129,39 @@ This document specifies the requirements for a network mapping and port scanning
 3. WHEN discovered hosts have web services, THE Network_Mapper SHALL offer to export targets for endpoint scanning or brute force attacks
 4. WHEN the Network_Mapper saves results, THE Network_Mapper SHALL use the same data directory structure as other Letgo modules
 5. WHEN configuration is needed, THE Network_Mapper SHALL follow the same file-based configuration patterns used by other modules
+
+### Requirement 10
+
+**User Story:** As a security tester, I want to see the actual IP addresses behind hostnames, so that I can understand the true network infrastructure and identify hosting providers.
+
+#### Acceptance Criteria
+
+1. WHEN a hostname is provided as a target, THE Network_Mapper SHALL resolve and display all associated IP addresses
+2. WHEN multiple IP addresses are resolved for a hostname, THE Network_Mapper SHALL scan all resolved IPs
+3. WHEN displaying scan results, THE Network_Mapper SHALL show both the original hostname and resolved IP addresses
+4. WHEN DNS resolution fails, THE Network_Mapper SHALL log the failure and continue with other targets
+5. WHEN IPv6 addresses are resolved, THE Network_Mapper SHALL include them in the results alongside IPv4 addresses
+
+### Requirement 11
+
+**User Story:** As a security tester, I want to detect protection services like CDNs and WAFs, so that I can understand what security measures are in place and adjust my testing approach accordingly.
+
+#### Acceptance Criteria
+
+1. WHEN scanning a web service, THE Network_Mapper SHALL attempt to identify CDN services like Cloudflare, Fastly, CloudFront, and others
+2. WHEN protection services are detected, THE Network_Mapper SHALL display the service name, type, and confidence level
+3. WHEN analyzing HTTP headers, THE Network_Mapper SHALL identify WAF signatures and security headers
+4. WHEN multiple protection layers are detected, THE Network_Mapper SHALL list all identified services
+5. WHEN protection detection is inconclusive, THE Network_Mapper SHALL indicate that protection status is unknown
+
+### Requirement 12
+
+**User Story:** As a security tester, I want comprehensive hostname analysis, so that I can gather intelligence about the target's infrastructure and hosting environment.
+
+#### Acceptance Criteria
+
+1. WHEN analyzing a hostname, THE Network_Mapper SHALL perform reverse DNS lookups on resolved IP addresses
+2. WHEN IP addresses are identified, THE Network_Mapper SHALL determine the hosting provider or ASN information
+3. WHEN geolocation data is available, THE Network_Mapper SHALL include country and region information for IP addresses
+4. WHEN SSL certificates are present, THE Network_Mapper SHALL extract certificate details including issuer and subject alternative names
+5. WHEN subdomain enumeration is enabled, THE Network_Mapper SHALL attempt to discover related subdomains

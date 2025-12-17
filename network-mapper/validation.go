@@ -230,12 +230,12 @@ func ValidateScanConfig(config ScanConfig) error {
 		}
 	}
 
-	// Validate max threads
-	if config.MaxThreads < 1 {
+	// Validate max threads (0 means use default, so it's allowed)
+	if config.MaxThreads < 0 {
 		return ValidationError{
 			Field:   "max_threads",
 			Value:   config.MaxThreads,
-			Message: "max threads must be at least 1",
+			Message: "max threads cannot be negative (use 0 for default)",
 		}
 	}
 

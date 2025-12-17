@@ -82,12 +82,19 @@ func NewComprehensiveScanner(config ComprehensiveScannerConfig) (*ComprehensiveS
 	progressMonitor := createProgressMonitorWithErrorHandling(logger)
 
 	// Create engine with comprehensive error handling
+	ipResolver := NewIPResolver()
+	protectionDetector := NewProtectionDetector()
+	infrastructureAnalyzer := NewInfrastructureAnalyzer()
+
 	engine := NewConcurrentScannerEngineWithErrorHandling(
 		portScanner,
 		serviceDetector,
 		osFingerprinter,
 		targetResolver,
 		progressMonitor,
+		ipResolver,
+		protectionDetector,
+		infrastructureAnalyzer,
 		logger,
 		errorHandler,
 		resourceManager,

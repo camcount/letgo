@@ -116,6 +116,9 @@ func TestProperty6_ProgressReporting(t *testing.T) {
 				nil, // No OS fingerprinter needed for this test
 				mockResolver,
 				mockProgressMonitor,
+				nil, // No IP resolver needed for this test
+				nil, // No protection detector needed for this test
+				nil, // No infrastructure analyzer needed for this test
 				logger,
 			)
 
@@ -255,6 +258,9 @@ func TestProgressUpdatesDuringScan(t *testing.T) {
 		nil,
 		mockResolver,
 		mockProgressMonitor,
+		nil, // No IP resolver needed for this test
+		nil, // No protection detector needed for this test
+		nil, // No infrastructure analyzer needed for this test
 		logger,
 	)
 

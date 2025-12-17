@@ -1,0 +1,62 @@
+# Network Mapper Configuration
+# This file defines default parameters for network scanning operations.
+# Uncomment and modify parameters as needed. Commented parameters use default values.
+
+# ==============================================================================
+# SCAN DEFAULTS
+# ==============================================================================
+
+# Default scan timeout in seconds (default: 5)
+DefaultTimeout=5
+
+# Default number of concurrent threads (default: 50)
+DefaultThreads=50
+
+# Default output format: text, json, xml (default: text)
+DefaultFormat=text
+
+# ==============================================================================
+# DETECTION SETTINGS
+# ==============================================================================
+
+# Automatically detect services on open ports (true/false, default: true)
+AutoServiceDetect=true
+
+# Automatically perform OS fingerprinting (true/false, default: false)
+AutoOSDetect=false
+
+# ==============================================================================
+# TIMING PROFILES
+# ==============================================================================
+
+# Quick scan timeout in seconds (default: 3)
+# QuickScanTimeout=3
+
+# Comprehensive scan timeout in seconds (default: 8)
+# ComprehensiveScanTimeout=8
+
+# Stealth scan timeout in seconds (default: 15)
+# StealthScanTimeout=15
+
+# ==============================================================================
+# PORT LISTS
+# ==============================================================================
+
+# Default port list size for quick scans (default: 100)
+# QuickScanPorts=100
+
+# Default port list size for comprehensive scans (default: 1000)
+# ComprehensiveScanPorts=1000
+
+# ==============================================================================
+# INTEGRATION SETTINGS
+# ==============================================================================
+
+# Automatically export web services to valid-url.txt (true/false, default: false)
+# AutoExportWebServices=false
+
+# Automatically export auth services for brute force (true/false, default: false)
+# AutoExportAuthServices=false
+
+# Automatically export DDoS targets (true/false, default: false)
+# AutoExportDDoSTargets=false

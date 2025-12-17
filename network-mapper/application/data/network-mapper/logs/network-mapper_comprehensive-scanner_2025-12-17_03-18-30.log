@@ -1,0 +1,5 @@
+2025-12-17 03:18:30.074 [INFO] [comprehensive-scanner] File logging enabled {log_file=application\data\network-mapper\logs\network-mapper_comprehensive-scanner_2025-12-17_03-18-30.log}
+2025-12-17 03:18:30.075 [INFO] [comprehensive-scanner] Resource requirements estimated {total_operations=1, estimated_duration=100ms, peak_goroutines=11, peak_connections=1, estimated_memory_mb=0.001}
+2025-12-17 03:18:30.075 [INFO] [comprehensive-scanner] Starting network scan {ports=1, port_ranges=0, scan_type=TCP Connect, max_threads=1, timeout=100ms, service_detect=false, os_detect=false, targets=1}
+2025-12-17 03:18:32.076 [INFO] [comprehensive-scanner] Network scan completed {scan_rate=0.4997565685754469, hosts_scanned=1, ports_scanned=1, open_ports=0, closed_ports=1, filtered_ports=0, elapsed_time=2.0009742s}
+2025-12-17 03:18:32.076 [INFO] [comprehensive-scanner] Resource manager stopped

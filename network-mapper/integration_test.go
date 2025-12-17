@@ -24,6 +24,9 @@ func TestScannerEngineIntegration(t *testing.T) {
 		nil, // No OS fingerprinter for basic test
 		targetResolver,
 		nil, // No progress monitor for basic test
+		nil, // No IP resolver for basic test
+		nil, // No protection detector for basic test
+		nil, // No infrastructure analyzer for basic test
 		logger,
 	)
 
@@ -74,6 +77,9 @@ func TestScannerEngineWithPauseResume(t *testing.T) {
 		nil,
 		targetResolver,
 		nil, // No progress monitor for this test
+		nil, // No IP resolver for this test
+		nil, // No protection detector for this test
+		nil, // No infrastructure analyzer for this test
 		logger,
 	)
 
@@ -136,6 +142,9 @@ func TestScannerEngineConnectionLimiting(t *testing.T) {
 		nil,
 		targetResolver,
 		nil, // No progress monitor for this test
+		nil, // No IP resolver for this test
+		nil, // No protection detector for this test
+		nil, // No infrastructure analyzer for this test
 		logger,
 	)
 

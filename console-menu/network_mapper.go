@@ -55,7 +55,9 @@ func (m *Menu) networkMapper() {
 	config.Targets = targets
 	config.MaxThreads = 50
 	config.Timeout = 5 * time.Second
+	config.DNSTimeout = 3 * time.Second
 	config.OutputFormat = networkmapper.OutputFormatText
+	config.IncludeIPv6 = false // Default to IPv4 only
 
 	switch profileChoice {
 	case "1":
@@ -63,12 +65,18 @@ func (m *Menu) networkMapper() {
 		config.Ports = getTopPorts(100)
 		config.ServiceDetect = false
 		config.OSDetect = false
+		config.ProtectionDetect = false
+		config.InfraAnalysis = false
+		config.SubdomainEnum = false
 		fmt.Println("✓ Quick scan profile selected")
 	case "3":
 		// Stealth scan
 		config.Ports = getTopPorts(200)
 		config.ServiceDetect = true
 		config.OSDetect = false
+		config.ProtectionDetect = false
+		config.InfraAnalysis = false
+		config.SubdomainEnum = false
 		config.MaxThreads = 10
 		config.Timeout = 10 * time.Second
 		fmt.Println("✓ Stealth scan profile selected")
@@ -77,6 +85,9 @@ func (m *Menu) networkMapper() {
 		config.Ports = getVulnerabilityPorts()
 		config.ServiceDetect = true
 		config.OSDetect = true
+		config.ProtectionDetect = true
+		config.InfraAnalysis = true
+		config.SubdomainEnum = false
 		config.MaxThreads = 25
 		fmt.Println("✓ Vulnerability scan profile selected")
 	case "5":
@@ -87,6 +98,9 @@ func (m *Menu) networkMapper() {
 		config.Ports = getTopPorts(1000)
 		config.ServiceDetect = true
 		config.OSDetect = true
+		config.ProtectionDetect = true
+		config.InfraAnalysis = true
+		config.SubdomainEnum = true
 		fmt.Println("✓ Comprehensive scan profile selected")
 	}
 
@@ -169,8 +183,70 @@ func (m *Menu) networkMapper() {
 			}
 
 			fmt.Printf("\nHost: %s (%s)\n", host.Target, host.Status.String())
+			
+			// Display resolved IPs (Requirements 10.3)
+			if len(host.ResolvedIPs) > 0 {
+				fmt.Print("Resolved IPs: ")
+				for i, resolvedIP := range host.ResolvedIPs {
+					if i > 0 {
+						fmt.Print(", ")
+					}
+					fmt.Printf("%s (%s)", resolvedIP.IP, resolvedIP.Type)
+				}
+				fmt.Println()
+			}
+
+			// Display OS information
 			if host.OS.Family != "" {
 				fmt.Printf("OS: %s %s (%.1f%% confidence)\n", host.OS.Family, host.OS.Version, host.OS.Confidence)
+			}
+
+			// Display protection services (Requirements 11.2)
+			if len(host.Protection) > 0 {
+				fmt.Printf("Protection Services:\n")
+				for _, protection := range host.Protection {
+					fmt.Printf("  %s: %s (%.1f%% confidence)\n", 
+						protection.Type.String(), protection.Name, protection.Confidence)
+					if len(protection.Evidence) > 0 {
+						fmt.Printf("    Evidence: %s\n", strings.Join(protection.Evidence, ", "))
+					}
+				}
+			}
+
+			// Display infrastructure information (Requirements 12.4)
+			if host.Infrastructure.HostingProvider != "" || host.Infrastructure.CloudPlatform != "" {
+				fmt.Printf("Infrastructure:\n")
+				if host.Infrastructure.HostingProvider != "" {
+					fmt.Printf("  Hosting Provider: %s\n", host.Infrastructure.HostingProvider)
+				}
+				if host.Infrastructure.CloudPlatform != "" {
+					fmt.Printf("  Cloud Platform: %s\n", host.Infrastructure.CloudPlatform)
+				}
+				if host.Infrastructure.DataCenter != "" {
+					fmt.Printf("  Data Center: %s\n", host.Infrastructure.DataCenter)
+				}
+				if host.Infrastructure.NetworkInfo.ASN != "" {
+					fmt.Printf("  ASN: %s (%s)\n", host.Infrastructure.NetworkInfo.ASN, host.Infrastructure.NetworkInfo.Organization)
+				}
+			}
+
+			// Display SSL certificate information
+			if host.Infrastructure.SSLInfo.Subject != "" {
+				fmt.Printf("SSL Certificate:\n")
+				fmt.Printf("  Subject: %s\n", host.Infrastructure.SSLInfo.Subject)
+				fmt.Printf("  Issuer: %s\n", host.Infrastructure.SSLInfo.Issuer)
+				if len(host.Infrastructure.SSLInfo.SANs) > 0 {
+					fmt.Printf("  SANs: %s\n", strings.Join(host.Infrastructure.SSLInfo.SANs, ", "))
+				}
+				fmt.Printf("  Valid: %s - %s\n", 
+					host.Infrastructure.SSLInfo.ValidFrom.Format("2006-01-02"), 
+					host.Infrastructure.SSLInfo.ValidTo.Format("2006-01-02"))
+			}
+
+			// Display discovered subdomains
+			if len(host.Infrastructure.Subdomains) > 0 {
+				fmt.Printf("Subdomains (%d): %s\n", len(host.Infrastructure.Subdomains), 
+					strings.Join(host.Infrastructure.Subdomains, ", "))
 			}
 
 			openPorts := 0
@@ -248,6 +324,30 @@ func (m *Menu) configureCustomScan(config *networkmapper.ScanConfig, reader *buf
 	osDetect = strings.TrimSpace(strings.ToLower(osDetect))
 	config.OSDetect = osDetect != "n" && osDetect != "no"
 
+	// Protection detection
+	fmt.Print("Enable protection detection (CDN/WAF)? (y/n, default: y): ")
+	protectionDetect, _ := reader.ReadString('\n')
+	protectionDetect = strings.TrimSpace(strings.ToLower(protectionDetect))
+	config.ProtectionDetect = protectionDetect != "n" && protectionDetect != "no"
+
+	// Infrastructure analysis
+	fmt.Print("Enable infrastructure analysis (hosting/SSL)? (y/n, default: y): ")
+	infraAnalysis, _ := reader.ReadString('\n')
+	infraAnalysis = strings.TrimSpace(strings.ToLower(infraAnalysis))
+	config.InfraAnalysis = infraAnalysis != "n" && infraAnalysis != "no"
+
+	// Subdomain enumeration
+	fmt.Print("Enable subdomain enumeration? (y/n, default: n): ")
+	subdomainEnum, _ := reader.ReadString('\n')
+	subdomainEnum = strings.TrimSpace(strings.ToLower(subdomainEnum))
+	config.SubdomainEnum = subdomainEnum == "y" || subdomainEnum == "yes"
+
+	// IPv6 support
+	fmt.Print("Include IPv6 addresses? (y/n, default: n): ")
+	includeIPv6, _ := reader.ReadString('\n')
+	includeIPv6 = strings.TrimSpace(strings.ToLower(includeIPv6))
+	config.IncludeIPv6 = includeIPv6 == "y" || includeIPv6 == "yes"
+
 	// Thread count
 	fmt.Print("Number of threads (default: 50): ")
 	threadsStr, _ := reader.ReadString('\n')
@@ -266,6 +366,18 @@ func (m *Menu) configureCustomScan(config *networkmapper.ScanConfig, reader *buf
 		if timeout, err := strconv.Atoi(timeoutStr); err == nil && timeout > 0 {
 			config.Timeout = time.Duration(timeout) * time.Second
 		}
+	}
+
+	// DNS timeout
+	fmt.Print("DNS resolution timeout in seconds (default: 3): ")
+	dnsTimeoutStr, _ := reader.ReadString('\n')
+	dnsTimeoutStr = strings.TrimSpace(dnsTimeoutStr)
+	if dnsTimeoutStr != "" {
+		if dnsTimeout, err := strconv.Atoi(dnsTimeoutStr); err == nil && dnsTimeout > 0 {
+			config.DNSTimeout = time.Duration(dnsTimeout) * time.Second
+		}
+	} else {
+		config.DNSTimeout = 3 * time.Second
 	}
 
 	fmt.Println("✓ Custom scan configuration complete")

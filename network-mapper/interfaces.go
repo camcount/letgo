@@ -108,3 +108,54 @@ type TargetResolver interface {
 	// ResolveHostname resolves a hostname to IP addresses
 	ResolveHostname(hostname string) ([]string, error)
 }
+
+// IPResolver handles hostname resolution, reverse DNS lookups, and IP address analysis
+type IPResolver interface {
+	// ResolveHostname resolves a hostname to IP addresses with IPv4 and IPv6 support
+	ResolveHostname(ctx context.Context, hostname string) ([]ResolvedIP, error)
+
+	// ReverseLookup performs reverse DNS lookup on an IP address
+	ReverseLookup(ctx context.Context, ip string) ([]string, error)
+
+	// GetIPInfo retrieves geolocation and ASN information for an IP address
+	GetIPInfo(ctx context.Context, ip string) (IPInfo, error)
+
+	// ResolveHostnameWithOptions resolves hostname with specific options
+	ResolveHostnameWithOptions(ctx context.Context, hostname string, options ResolveOptions) ([]ResolvedIP, error)
+}
+
+// ProtectionDetector handles detection of CDN, WAF, and other protection services
+type ProtectionDetector interface {
+	// DetectProtection performs comprehensive protection service detection
+	DetectProtection(ctx context.Context, target string, port int) ([]ProtectionService, error)
+
+	// AnalyzeHTTPHeaders analyzes HTTP headers for protection service signatures
+	AnalyzeHTTPHeaders(headers map[string]string) ([]ProtectionService, error)
+
+	// DetectCDN specifically detects CDN services
+	DetectCDN(ctx context.Context, hostname string) ([]ProtectionService, error)
+
+	// DetectWAF specifically detects WAF services
+	DetectWAF(ctx context.Context, target string, port int) ([]ProtectionService, error)
+
+	// AnalyzeSecurityHeaders analyzes security-related HTTP headers
+	AnalyzeSecurityHeaders(headers map[string]string) ([]ProtectionService, error)
+}
+
+// InfrastructureAnalyzer handles hosting infrastructure, SSL certificates, and related infrastructure analysis
+type InfrastructureAnalyzer interface {
+	// AnalyzeInfrastructure performs comprehensive infrastructure analysis
+	AnalyzeInfrastructure(ctx context.Context, target string) (InfrastructureInfo, error)
+
+	// GetSSLCertificate retrieves and analyzes SSL certificate information
+	GetSSLCertificate(ctx context.Context, hostname string, port int) (SSLCertInfo, error)
+
+	// EnumerateSubdomains attempts to discover related subdomains
+	EnumerateSubdomains(ctx context.Context, domain string) ([]string, error)
+
+	// IdentifyHostingProvider determines the hosting provider for an IP address
+	IdentifyHostingProvider(ctx context.Context, ip string) (string, error)
+
+	// GetCloudPlatform identifies the cloud platform (AWS, GCP, Azure, etc.)
+	GetCloudPlatform(ctx context.Context, ip string) (string, error)
+}

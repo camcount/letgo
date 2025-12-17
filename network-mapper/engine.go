@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -37,12 +39,15 @@ func (ss ScanState) String() string {
 
 // ConcurrentScannerEngine implements the ScannerEngine interface with goroutine-based concurrency
 type ConcurrentScannerEngine struct {
-	portScanner     PortScanner
-	serviceDetector ServiceDetector
-	osFingerprinter OSFingerprinter
-	targetResolver  TargetResolver
-	progressMonitor ProgressMonitor
-	logger          *log.Logger
+	portScanner           PortScanner
+	serviceDetector       ServiceDetector
+	osFingerprinter       OSFingerprinter
+	targetResolver        TargetResolver
+	progressMonitor       ProgressMonitor
+	ipResolver            IPResolver
+	protectionDetector    ProtectionDetector
+	infrastructureAnalyzer InfrastructureAnalyzer
+	logger                *log.Logger
 
 	// Comprehensive error handling and resource management
 	nmLogger        *NetworkMapperLogger
@@ -87,6 +92,9 @@ func NewConcurrentScannerEngine(
 	osFingerprinter OSFingerprinter,
 	targetResolver TargetResolver,
 	progressMonitor ProgressMonitor,
+	ipResolver IPResolver,
+	protectionDetector ProtectionDetector,
+	infrastructureAnalyzer InfrastructureAnalyzer,
 	logger *log.Logger,
 ) *ConcurrentScannerEngine {
 	if logger == nil {
@@ -94,16 +102,19 @@ func NewConcurrentScannerEngine(
 	}
 
 	return &ConcurrentScannerEngine{
-		portScanner:     portScanner,
-		serviceDetector: serviceDetector,
-		osFingerprinter: osFingerprinter,
-		targetResolver:  targetResolver,
-		progressMonitor: progressMonitor,
-		logger:          logger,
-		state:           ScanStateIdle,
-		maxConnections:  100, // Default connection limit
-		pauseChan:       make(chan struct{}),
-		resumeChan:      make(chan struct{}),
+		portScanner:            portScanner,
+		serviceDetector:        serviceDetector,
+		osFingerprinter:        osFingerprinter,
+		targetResolver:         targetResolver,
+		progressMonitor:        progressMonitor,
+		ipResolver:             ipResolver,
+		protectionDetector:     protectionDetector,
+		infrastructureAnalyzer: infrastructureAnalyzer,
+		logger:                 logger,
+		state:                  ScanStateIdle,
+		maxConnections:         100, // Default connection limit
+		pauseChan:              make(chan struct{}),
+		resumeChan:             make(chan struct{}),
 	}
 }
 
@@ -114,6 +125,9 @@ func NewConcurrentScannerEngineWithErrorHandling(
 	osFingerprinter OSFingerprinter,
 	targetResolver TargetResolver,
 	progressMonitor ProgressMonitor,
+	ipResolver IPResolver,
+	protectionDetector ProtectionDetector,
+	infrastructureAnalyzer InfrastructureAnalyzer,
 	nmLogger *NetworkMapperLogger,
 	errorHandler *ErrorHandler,
 	resourceManager *ResourceManager,
@@ -129,16 +143,19 @@ func NewConcurrentScannerEngineWithErrorHandling(
 	}
 
 	return &ConcurrentScannerEngine{
-		portScanner:     portScanner,
-		serviceDetector: serviceDetector,
-		osFingerprinter: osFingerprinter,
-		targetResolver:  targetResolver,
-		progressMonitor: progressMonitor,
-		logger:          nmLogger.ToStandardLogger(),
-		nmLogger:        nmLogger,
-		errorHandler:    errorHandler,
-		resourceManager: resourceManager,
-		state:           ScanStateIdle,
+		portScanner:            portScanner,
+		serviceDetector:        serviceDetector,
+		osFingerprinter:        osFingerprinter,
+		targetResolver:         targetResolver,
+		progressMonitor:        progressMonitor,
+		ipResolver:             ipResolver,
+		protectionDetector:     protectionDetector,
+		infrastructureAnalyzer: infrastructureAnalyzer,
+		logger:                 nmLogger.ToStandardLogger(),
+		nmLogger:               nmLogger,
+		errorHandler:           errorHandler,
+		resourceManager:        resourceManager,
+		state:                  ScanStateIdle,
 		maxConnections:  100, // Default connection limit
 		pauseChan:       make(chan struct{}),
 		resumeChan:      make(chan struct{}),
@@ -210,8 +227,8 @@ func (e *ConcurrentScannerEngine) Scan(ctx context.Context, config ScanConfig) (
 	e.startTime = time.Now()
 	e.resetCounters()
 
-	// Resolve targets with error handling
-	targets, err := e.resolveTargetsWithErrorHandling(config.Targets)
+	// Resolve targets with enhanced IP resolution for hostname targets (Requirements 10.2)
+	targets, err := e.resolveTargetsWithEnhancedIPResolution(config.Targets, config)
 	if err != nil {
 		e.setState(ScanStateIdle)
 		return nil, err
@@ -220,12 +237,16 @@ func (e *ConcurrentScannerEngine) Scan(ctx context.Context, config ScanConfig) (
 	// Determine ports to scan
 	ports := e.determinePorts(config)
 
-	// Calculate total hosts and ports
+	// Calculate total hosts and ports including analysis phases
 	totalHosts := 0
 	for _, target := range targets {
 		totalHosts += len(target.IPs)
 	}
 	totalPorts := totalHosts * len(ports)
+	
+	// Add analysis phases to progress calculation
+	analysisPhases := e.calculateAnalysisPhases(config, totalHosts)
+	totalOperations := totalPorts + analysisPhases
 
 	// Initialize results
 	e.results = &ScanResult{
@@ -239,13 +260,13 @@ func (e *ConcurrentScannerEngine) Scan(ctx context.Context, config ScanConfig) (
 		},
 	}
 
-	// Start progress monitoring (Requirements 2.4, 8.1, 8.2)
+	// Start progress monitoring with analysis phases (Requirements 2.4, 8.1, 8.2)
 	if e.progressMonitor != nil {
-		e.progressMonitor.Start(totalHosts, totalPorts)
+		e.progressMonitor.Start(totalHosts, totalOperations)
 	}
 
-	// Update progress info
-	e.updateProgress(0, 0, totalHosts, totalPorts, "", 0)
+	// Update progress info including analysis phases
+	e.updateProgress(0, 0, totalHosts, totalOperations, "", 0)
 
 	// Scan all targets concurrently
 	var wg sync.WaitGroup
@@ -480,6 +501,94 @@ func (e *ConcurrentScannerEngine) scanHost(target, originalTarget string, ports 
 		}
 	}
 
+	// Perform infrastructure analysis if enabled (Requirements 12.1)
+	if e.infrastructureAnalyzer != nil {
+		if err := e.checkScanState(); err == nil {
+			if e.nmLogger != nil {
+				e.nmLogger.Debug("Starting infrastructure analysis", "target", originalTarget)
+			}
+			
+			// Update progress for infrastructure analysis phase
+			if e.progressMonitor != nil {
+				hostsScanned := int(atomic.LoadInt64(&e.hostsScanned))
+				portsScanned := int(atomic.LoadInt64(&e.portsScanned))
+				e.progressMonitor.UpdateProgress(hostsScanned, portsScanned, originalTarget, 0)
+			}
+			
+			if infraInfo, err := e.infrastructureAnalyzer.AnalyzeInfrastructure(e.ctx, originalTarget); err == nil {
+				hostResult.Infrastructure = infraInfo
+				if e.nmLogger != nil {
+					e.nmLogger.Debug("Infrastructure analysis completed", "target", originalTarget, "hosting_provider", infraInfo.HostingProvider)
+				}
+			} else if e.nmLogger != nil {
+				e.nmLogger.Debug("Infrastructure analysis failed", "target", originalTarget, "error", err)
+			}
+		}
+	}
+
+	// Perform enhanced protection detection integrated with web service scanning (Requirements 11.1)
+	if e.protectionDetector != nil {
+		if err := e.checkScanState(); err == nil {
+			var protectionServices []ProtectionService
+			
+			for _, portResult := range hostResult.Ports {
+				if portResult.State == PortOpen && e.isWebServicePort(portResult.Port) {
+					if e.nmLogger != nil {
+						e.nmLogger.Debug("Starting protection detection for web service", "target", target, "port", portResult.Port)
+					}
+					
+					// Update progress for protection detection phase
+					if e.progressMonitor != nil {
+						hostsScanned := int(atomic.LoadInt64(&e.hostsScanned))
+						portsScanned := int(atomic.LoadInt64(&e.portsScanned))
+						e.progressMonitor.UpdateProgress(hostsScanned, portsScanned, target, portResult.Port)
+					}
+					
+					if services, err := e.protectionDetector.DetectProtection(e.ctx, target, portResult.Port); err == nil {
+						protectionServices = append(protectionServices, services...)
+						if e.nmLogger != nil {
+							e.nmLogger.Debug("Protection detection completed", "target", target, "port", portResult.Port, "services_found", len(services))
+						}
+					} else if e.nmLogger != nil {
+						e.nmLogger.Debug("Protection detection failed", "target", target, "port", portResult.Port, "error", err)
+					}
+				}
+			}
+			
+			// Ensure protection status is always indicated (Requirements 11.5)
+			if len(protectionServices) == 0 {
+				// Add unknown protection status to indicate inconclusive detection
+				protectionServices = append(protectionServices, ProtectionService{
+					Type:       ProtectionCDN, // Default type for unknown protection
+					Name:       "Unknown",
+					Confidence: 0.0,
+					Evidence:   []string{"Protection detection inconclusive"},
+					Details:    []KeyValue{{Key: "status", Value: "unknown"}},
+				})
+			}
+			
+			hostResult.Protection = protectionServices
+		}
+	}
+
+	// Enhanced IP resolution for hostname targets (Requirements 10.2)
+	if e.ipResolver != nil && e.isHostname(originalTarget) {
+		if err := e.checkScanState(); err == nil {
+			if e.nmLogger != nil {
+				e.nmLogger.Debug("Starting enhanced IP resolution", "hostname", originalTarget)
+			}
+			
+			if resolvedIPs, err := e.ipResolver.ResolveHostname(e.ctx, originalTarget); err == nil {
+				hostResult.ResolvedIPs = resolvedIPs
+				if e.nmLogger != nil {
+					e.nmLogger.Debug("Enhanced IP resolution completed", "hostname", originalTarget, "ips_resolved", len(resolvedIPs))
+				}
+			} else if e.nmLogger != nil {
+				e.nmLogger.Debug("Enhanced IP resolution failed", "hostname", originalTarget, "error", err)
+			}
+		}
+	}
+
 	hostResult.ResponseTime = time.Since(startTime)
 	return hostResult
 }
@@ -667,6 +776,120 @@ func (e *ConcurrentScannerEngine) resolveTargetsWithErrorHandling(targets []stri
 		return nil, fmt.Errorf("failed to resolve targets: %w", err)
 	}
 	return resolved, nil
+}
+
+// resolveTargetsWithEnhancedIPResolution resolves targets using enhanced IP resolution for hostname targets (Requirements 10.2)
+func (e *ConcurrentScannerEngine) resolveTargetsWithEnhancedIPResolution(targets []string, config ScanConfig) ([]NetworkTarget, error) {
+	var resolvedTargets []NetworkTarget
+
+	for _, target := range targets {
+		target = strings.TrimSpace(target)
+		if target == "" {
+			continue
+		}
+
+		// Use IPResolver for hostname targets to get enhanced resolution
+		if e.ipResolver != nil && e.isHostname(target) {
+			if e.nmLogger != nil {
+				e.nmLogger.Debug("Using enhanced IP resolution for hostname", "target", target)
+			}
+
+			// Use enhanced IP resolution with IPv4 and IPv6 support
+			resolvedIPs, err := e.ipResolver.ResolveHostname(e.ctx, target)
+			if err != nil {
+				if e.errorHandler != nil {
+					e.errorHandler.HandleError(err, "enhanced_ip_resolution", target, 0)
+				}
+				// Fall back to basic target resolution
+				basicTargets, basicErr := e.targetResolver.ResolveTargets([]string{target})
+				if basicErr != nil {
+					return nil, fmt.Errorf("failed to resolve hostname '%s' with both enhanced and basic resolution: %w", target, basicErr)
+				}
+				resolvedTargets = append(resolvedTargets, basicTargets...)
+				continue
+			}
+
+			// Convert ResolvedIP to NetworkTarget
+			var netIPs []net.IP
+			for _, resolvedIP := range resolvedIPs {
+				if ip := net.ParseIP(resolvedIP.IP); ip != nil {
+					netIPs = append(netIPs, ip)
+				}
+			}
+
+			networkTarget := NetworkTarget{
+				Original: target,
+				IPs:      netIPs,
+				Hostname: target,
+			}
+			resolvedTargets = append(resolvedTargets, networkTarget)
+		} else {
+			// Use basic target resolution for IP addresses and CIDR ranges
+			basicTargets, err := e.targetResolver.ResolveTargets([]string{target})
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve target '%s': %w", target, err)
+			}
+			resolvedTargets = append(resolvedTargets, basicTargets...)
+		}
+	}
+
+	return resolvedTargets, nil
+}
+
+// isHostname checks if a target string is a hostname (not an IP address or CIDR)
+func (e *ConcurrentScannerEngine) isHostname(target string) bool {
+	// Check if it's an IP address
+	if net.ParseIP(target) != nil {
+		return false
+	}
+	
+	// Check if it's a CIDR range
+	if strings.Contains(target, "/") {
+		return false
+	}
+	
+	// Check if it's an IP range
+	if strings.Contains(target, "-") {
+		return false
+	}
+	
+	// Assume it's a hostname
+	return true
+}
+
+// calculateAnalysisPhases calculates the number of analysis operations for progress tracking
+func (e *ConcurrentScannerEngine) calculateAnalysisPhases(config ScanConfig, totalHosts int) int {
+	analysisPhases := 0
+	
+	// Infrastructure analysis phase
+	if e.infrastructureAnalyzer != nil {
+		analysisPhases += totalHosts // One analysis per host
+	}
+	
+	// Protection detection phase (for web services)
+	if e.protectionDetector != nil {
+		// Estimate web services (ports 80, 443, 8080, 8443)
+		webPorts := 0
+		for _, port := range e.determinePorts(config) {
+			if e.isWebServicePort(port) {
+				webPorts++
+			}
+		}
+		analysisPhases += totalHosts * webPorts // Protection detection per web service
+	}
+	
+	return analysisPhases
+}
+
+// isWebServicePort checks if a port is commonly used for web services
+func (e *ConcurrentScannerEngine) isWebServicePort(port int) bool {
+	webPorts := []int{80, 443, 8080, 8443, 8000, 8008, 8888, 9000, 9080, 9443}
+	for _, webPort := range webPorts {
+		if port == webPort {
+			return true
+		}
+	}
+	return false
 }
 
 // handleScanError handles errors that occur during scanning with graceful degradation

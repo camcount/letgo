@@ -189,6 +189,69 @@ func (rm *DefaultResultManager) exportText(results *ScanResult) ([]byte, error) 
 		sb.WriteString(fmt.Sprintf("Host: %s (%s)\n", host.Target, host.Status.String()))
 		sb.WriteString(fmt.Sprintf("Response Time: %s\n", host.ResponseTime.String()))
 
+		// Resolved IP addresses (Requirements 10.3, 12.3)
+		if len(host.ResolvedIPs) > 0 {
+			sb.WriteString("Resolved IPs:\n")
+			for _, resolvedIP := range host.ResolvedIPs {
+				sb.WriteString(fmt.Sprintf("  - %s (%s)", resolvedIP.IP, resolvedIP.Type))
+				if resolvedIP.Hostname != "" && resolvedIP.Hostname != host.Target {
+					sb.WriteString(fmt.Sprintf(" [%s]", resolvedIP.Hostname))
+				}
+				sb.WriteString("\n")
+			}
+		}
+
+		// Protection services information (Requirements 11.2)
+		if len(host.Protection) > 0 {
+			sb.WriteString("Protection Services:\n")
+			for _, protection := range host.Protection {
+				sb.WriteString(fmt.Sprintf("  - %s (%s) - %.1f%% confidence\n", 
+					protection.Name, protection.Type.String(), protection.Confidence))
+				if len(protection.Evidence) > 0 {
+					sb.WriteString("    Evidence: ")
+					sb.WriteString(strings.Join(protection.Evidence, ", "))
+					sb.WriteString("\n")
+				}
+			}
+		}
+
+		// Infrastructure information (Requirements 12.2, 12.3)
+		if host.Infrastructure.HostingProvider != "" || host.Infrastructure.CloudPlatform != "" {
+			sb.WriteString("Infrastructure:\n")
+			if host.Infrastructure.HostingProvider != "" {
+				sb.WriteString(fmt.Sprintf("  - Hosting Provider: %s\n", host.Infrastructure.HostingProvider))
+			}
+			if host.Infrastructure.CloudPlatform != "" {
+				sb.WriteString(fmt.Sprintf("  - Cloud Platform: %s\n", host.Infrastructure.CloudPlatform))
+			}
+			if host.Infrastructure.DataCenter != "" {
+				sb.WriteString(fmt.Sprintf("  - Data Center: %s\n", host.Infrastructure.DataCenter))
+			}
+			if host.Infrastructure.NetworkInfo.ASN != "" && host.Infrastructure.NetworkInfo.ASN != "Unknown" {
+				sb.WriteString(fmt.Sprintf("  - ASN: %s\n", host.Infrastructure.NetworkInfo.ASN))
+			}
+			if host.Infrastructure.NetworkInfo.Organization != "" && host.Infrastructure.NetworkInfo.Organization != "Unknown" {
+				sb.WriteString(fmt.Sprintf("  - Organization: %s\n", host.Infrastructure.NetworkInfo.Organization))
+			}
+		}
+
+		// SSL Certificate information (Requirements 12.4)
+		if host.Infrastructure.SSLInfo.Issuer != "" {
+			sb.WriteString("SSL Certificate:\n")
+			sb.WriteString(fmt.Sprintf("  - Issuer: %s\n", host.Infrastructure.SSLInfo.Issuer))
+			sb.WriteString(fmt.Sprintf("  - Subject: %s\n", host.Infrastructure.SSLInfo.Subject))
+			sb.WriteString(fmt.Sprintf("  - Valid From: %s\n", host.Infrastructure.SSLInfo.ValidFrom.Format("2006-01-02")))
+			sb.WriteString(fmt.Sprintf("  - Valid To: %s\n", host.Infrastructure.SSLInfo.ValidTo.Format("2006-01-02")))
+			if len(host.Infrastructure.SSLInfo.SANs) > 0 {
+				sb.WriteString(fmt.Sprintf("  - SANs: %s\n", strings.Join(host.Infrastructure.SSLInfo.SANs, ", ")))
+			}
+		}
+
+		// Subdomain information (Requirements 12.5)
+		if len(host.Infrastructure.Subdomains) > 0 {
+			sb.WriteString(fmt.Sprintf("Subdomains: %s\n", strings.Join(host.Infrastructure.Subdomains, ", ")))
+		}
+
 		// OS Information
 		if host.OS.Family != "" {
 			sb.WriteString(fmt.Sprintf("OS: %s %s (%.1f%% confidence)\n", host.OS.Family, host.OS.Version, host.OS.Confidence))

@@ -21,6 +21,9 @@ func NewScannerEngine() ScannerEngine {
 	osFingerprinter := NewDefaultOSFingerprinter(15*time.Second, 2, logger)
 	progressMonitor := NewDefaultProgressMonitor(nil) // No callback by default
 	targetResolver := NewTargetResolver()
+	ipResolver := NewIPResolver()
+	protectionDetector := NewProtectionDetector()
+	infrastructureAnalyzer := NewInfrastructureAnalyzer()
 
 	// Create and return the concurrent scanner engine
 	return NewConcurrentScannerEngine(
@@ -29,6 +32,9 @@ func NewScannerEngine() ScannerEngine {
 		osFingerprinter,
 		targetResolver,
 		progressMonitor,
+		ipResolver,
+		protectionDetector,
+		infrastructureAnalyzer,
 		logger,
 	)
 }

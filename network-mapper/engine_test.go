@@ -128,6 +128,9 @@ func TestProperty5_ConnectionLimiting(t *testing.T) {
 				nil, // No OS fingerprinter needed for this test
 				mockResolver,
 				nil, // No progress monitor needed for this test
+				nil, // No IP resolver needed for this test
+				nil, // No protection detector needed for this test
+				nil, // No infrastructure analyzer needed for this test
 				logger,
 			)
 
@@ -209,6 +212,9 @@ func TestProperty18_ScanControlOperations(t *testing.T) {
 				nil,
 				mockResolver,
 				nil, // No progress monitor needed for this test
+				nil, // No IP resolver needed for this test
+				nil, // No protection detector needed for this test
+				nil, // No infrastructure analyzer needed for this test
 				logger,
 			)
 
@@ -347,6 +353,9 @@ func TestConnectionLimitingEdgeCases(t *testing.T) {
 				nil,
 				mockResolver,
 				nil, // No progress monitor needed for this test
+				nil, // No IP resolver needed for this test
+				nil, // No protection detector needed for this test
+				nil, // No infrastructure analyzer needed for this test
 				logger,
 			)
 
@@ -399,6 +408,9 @@ func TestDefaultConnectionLimit(t *testing.T) {
 		nil,
 		mockResolver,
 		nil, // No progress monitor needed for this test
+		nil, // No IP resolver needed for this test
+		nil, // No protection detector needed for this test
+		nil, // No infrastructure analyzer needed for this test
 		logger,
 	)
 
@@ -437,6 +449,9 @@ func TestScanStateManagement(t *testing.T) {
 		nil,
 		mockResolver,
 		nil, // No progress monitor needed for this test
+		nil, // No IP resolver needed for this test
+		nil, // No protection detector needed for this test
+		nil, // No infrastructure analyzer needed for this test
 		logger,
 	)
 
@@ -466,6 +481,9 @@ func TestPauseResumeFunctionality(t *testing.T) {
 		nil,
 		mockResolver,
 		nil, // No progress monitor needed for this test
+		nil, // No IP resolver needed for this test
+		nil, // No protection detector needed for this test
+		nil, // No infrastructure analyzer needed for this test
 		logger,
 	)
 
@@ -533,6 +551,9 @@ func TestStopFunctionality(t *testing.T) {
 		nil,
 		mockResolver,
 		nil, // No progress monitor needed for this test
+		nil, // No IP resolver needed for this test
+		nil, // No protection detector needed for this test
+		nil, // No infrastructure analyzer needed for this test
 		logger,
 	)
 
@@ -590,6 +611,9 @@ func TestConcurrentScanAttempts(t *testing.T) {
 		nil,
 		mockResolver,
 		nil, // No progress monitor needed for this test
+		nil, // No IP resolver needed for this test
+		nil, // No protection detector needed for this test
+		nil, // No infrastructure analyzer needed for this test
 		logger,
 	)
 

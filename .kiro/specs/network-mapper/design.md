@@ -16,6 +16,9 @@ Network Mapper Module
 ├── Port Scanner (TCP/UDP port scanning)
 ├── Service Detector (Service identification and banner grabbing)
 ├── OS Fingerprinter (Operating system detection)
+├── IP Resolver (Hostname to IP resolution and analysis)
+├── Protection Detector (CDN/WAF/Security service detection)
+├── Infrastructure Analyzer (Hosting provider and geolocation analysis)
 ├── Result Manager (Output formatting and storage)
 ├── Profile Manager (Scan profile management)
 ├── Progress Monitor (Real-time progress tracking)
@@ -46,18 +49,23 @@ type ScannerEngine interface {
 }
 
 type ScanConfig struct {
-    Targets        []string          // IP addresses, hostnames, or CIDR ranges
-    Ports          []int             // Specific ports to scan
-    PortRanges     []PortRange       // Port ranges to scan
-    ScanType       ScanType          // TCP SYN, TCP Connect, UDP, etc.
-    ScanProfile    ScanProfile       // Quick, comprehensive, stealth, vulnerability
-    ServiceDetect  bool              // Enable service detection
-    OSDetect       bool              // Enable OS fingerprinting
-    MaxThreads     int               // Concurrent scanning threads
-    Timeout        time.Duration     // Per-port timeout
-    OutputFormat   OutputFormat      // JSON, XML, text
-    OutputFile     string            // Output file path
-    OnProgress     ProgressCallback  // Progress update callback
+    Targets            []string          // IP addresses, hostnames, or CIDR ranges
+    Ports              []int             // Specific ports to scan
+    PortRanges         []PortRange       // Port ranges to scan
+    ScanType           ScanType          // TCP SYN, TCP Connect, UDP, etc.
+    ScanProfile        ScanProfile       // Quick, comprehensive, stealth, vulnerability
+    ServiceDetect      bool              // Enable service detection
+    OSDetect           bool              // Enable OS fingerprinting
+    ProtectionDetect   bool              // Enable CDN/WAF detection
+    InfraAnalysis      bool              // Enable infrastructure analysis
+    SubdomainEnum      bool              // Enable subdomain enumeration
+    IncludeIPv6        bool              // Include IPv6 addresses in resolution
+    MaxThreads         int               // Concurrent scanning threads
+    Timeout            time.Duration     // Per-port timeout
+    DNSTimeout         time.Duration     // DNS resolution timeout
+    OutputFormat       OutputFormat      // JSON, XML, text
+    OutputFile         string            // Output file path
+    OnProgress         ProgressCallback  // Progress update callback
 }
 ```
 
@@ -130,6 +138,123 @@ type OSMatch struct {
 }
 ```
 
+### IP Resolver
+
+Handles hostname resolution, reverse DNS lookups, and IP address analysis.
+
+```go
+type IPResolver interface {
+    ResolveHostname(hostname string) ([]ResolvedIP, error)
+    ReverseLookup(ip string) ([]string, error)
+    GetIPInfo(ip string) (IPInfo, error)
+}
+
+type ResolvedIP struct {
+    IP       string    // IP address
+    Type     string    // IPv4 or IPv6
+    TTL      int       // DNS TTL
+    Source   string    // DNS server used
+}
+
+type IPInfo struct {
+    IP           string            // IP address
+    ASN          string            // Autonomous System Number
+    Organization string            // Organization/ISP name
+    Country      string            // Country code
+    Region       string            // Region/state
+    City         string            // City
+    Timezone     string            // Timezone
+    ISP          string            // Internet Service Provider
+    Metadata     map[string]string // Additional information
+}
+```
+
+### Protection Detector
+
+Identifies CDN, WAF, and other protection services in front of target hosts.
+
+```go
+type ProtectionDetector interface {
+    DetectProtection(ctx context.Context, target string, port int) ([]ProtectionService, error)
+    AnalyzeHTTPHeaders(headers map[string]string) ([]ProtectionService, error)
+    DetectCDN(ctx context.Context, hostname string) (CDNInfo, error)
+    DetectWAF(ctx context.Context, target string, port int) (WAFInfo, error)
+}
+
+type ProtectionService struct {
+    Type        ProtectionType    // CDN, WAF, DDoS Protection, etc.
+    Name        string            // Service name (Cloudflare, Fastly, etc.)
+    Confidence  float64           // Detection confidence (0-100)
+    Evidence    []string          // Evidence used for detection
+    Details     map[string]string // Additional service details
+}
+
+type ProtectionType int
+const (
+    ProtectionCDN ProtectionType = iota
+    ProtectionWAF
+    ProtectionDDoS
+    ProtectionLoadBalancer
+    ProtectionProxy
+    ProtectionFirewall
+)
+
+type CDNInfo struct {
+    Provider    string   // CDN provider name
+    EdgeServers []string // Edge server locations
+    Features    []string // Detected CDN features
+}
+
+type WAFInfo struct {
+    Vendor      string   // WAF vendor
+    Product     string   // WAF product name
+    Version     string   // WAF version if detectable
+    Rules       []string // Detected rule signatures
+}
+```
+
+### Infrastructure Analyzer
+
+Analyzes hosting infrastructure, SSL certificates, and related infrastructure details.
+
+```go
+type InfrastructureAnalyzer interface {
+    AnalyzeInfrastructure(ctx context.Context, target string) (InfrastructureInfo, error)
+    GetSSLCertificate(ctx context.Context, hostname string, port int) (SSLCertInfo, error)
+    EnumerateSubdomains(ctx context.Context, domain string) ([]string, error)
+}
+
+type InfrastructureInfo struct {
+    HostingProvider string            // Hosting provider name
+    CloudPlatform   string            // Cloud platform (AWS, GCP, Azure, etc.)
+    DataCenter      string            // Data center location
+    NetworkInfo     NetworkInfo       // Network-related information
+    SSLInfo         SSLCertInfo       // SSL certificate information
+    Subdomains      []string          // Discovered subdomains
+    RelatedDomains  []string          // Related domain names
+}
+
+type NetworkInfo struct {
+    ASN          string // Autonomous System Number
+    BGPPrefix    string // BGP prefix
+    Organization string // Network organization
+    Abuse        string // Abuse contact
+}
+
+type SSLCertInfo struct {
+    Issuer          string    // Certificate issuer
+    Subject         string    // Certificate subject
+    SANs            []string  // Subject Alternative Names
+    ValidFrom       time.Time // Certificate valid from
+    ValidTo         time.Time // Certificate valid to
+    Fingerprint     string    // Certificate fingerprint
+    SignatureAlg    string    // Signature algorithm
+    KeySize         int       // Key size in bits
+    IsWildcard      bool      // Is wildcard certificate
+    IsSelfSigned    bool      // Is self-signed certificate
+}
+```
+
 ### Result Manager
 
 Handles formatting, storage, and export of scan results in multiple formats.
@@ -149,12 +274,23 @@ type ScanResult struct {
 }
 
 type HostResult struct {
-    Target      string
-    Status      HostStatus  // Up, Down, Unknown
-    Ports       []PortResult
-    OS          OSInfo
-    ResponseTime time.Duration
+    Target          string              // Original target (hostname or IP)
+    ResolvedIPs     []ResolvedIP        // All resolved IP addresses
+    Status          HostStatus          // Up, Down, Unknown
+    Ports           []PortResult        // Port scan results
+    OS              OSInfo              // Operating system information
+    Protection      []ProtectionService // Detected protection services
+    Infrastructure  InfrastructureInfo  // Infrastructure analysis
+    ResponseTime    time.Duration       // Response time
 }
+
+type HostStatus int
+const (
+    HostUp HostStatus = iota
+    HostDown
+    HostUnknown
+    HostFiltered
+)
 ```
 
 ## Data Models
@@ -184,11 +320,15 @@ type TimingProfile struct {
 
 // Scan options and flags
 type ScanOptions struct {
-    ServiceDetection bool
-    OSDetection     bool
-    AggressiveMode  bool
-    StealthMode     bool
-    FragmentPackets bool
+    ServiceDetection   bool
+    OSDetection       bool
+    ProtectionDetect  bool
+    InfraAnalysis     bool
+    SubdomainEnum     bool
+    AggressiveMode    bool
+    StealthMode       bool
+    FragmentPackets   bool
+    IncludeIPv6       bool
 }
 
 // Progress tracking information
@@ -232,6 +372,165 @@ type ServiceSignature struct {
     Match       *regexp.Regexp
     ServiceName string
     Version     *regexp.Regexp
+}
+```
+
+### Protection Detection Databases
+
+The module includes comprehensive databases for identifying protection services:
+
+```go
+// CDN provider signatures
+var CDNSignatures = map[string]CDNSignature{
+    "cloudflare": {
+        Name: "Cloudflare",
+        Headers: []string{"cf-ray", "cf-cache-status", "server: cloudflare"},
+        IPRanges: []string{"173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22"},
+        ASNs: []string{"AS13335"},
+        CNAMEPatterns: []string{".cloudflare.com", ".cloudflare.net"},
+    },
+    "fastly": {
+        Name: "Fastly",
+        Headers: []string{"fastly-debug-digest", "x-served-by", "x-cache"},
+        IPRanges: []string{"23.235.32.0/20", "43.249.72.0/22"},
+        ASNs: []string{"AS54113"},
+        CNAMEPatterns: []string{".fastly.com", ".fastlylb.net"},
+    },
+    "cloudfront": {
+        Name: "Amazon CloudFront",
+        Headers: []string{"x-amz-cf-id", "x-amz-cf-pop", "via: cloudfront"},
+        IPRanges: []string{"13.32.0.0/15", "13.35.0.0/17"},
+        ASNs: []string{"AS16509"},
+        CNAMEPatterns: []string{".cloudfront.net"},
+    },
+    // Additional CDN providers: Akamai, KeyCDN, MaxCDN, etc.
+}
+
+type CDNSignature struct {
+    Name          string
+    Headers       []string
+    IPRanges      []string
+    ASNs          []string
+    CNAMEPatterns []string
+    Confidence    float64
+}
+
+// WAF detection signatures
+var WAFSignatures = map[string]WAFSignature{
+    "cloudflare_waf": {
+        Name: "Cloudflare WAF",
+        Headers: []string{"cf-ray", "server: cloudflare"},
+        BlockPages: []string{"Attention Required! | Cloudflare", "Ray ID:"},
+        ErrorCodes: []int{403, 429, 503},
+        Fingerprints: []string{"cloudflare", "cf-ray"},
+        TestPayloads: []string{"<script>alert(1)</script>", "' OR 1=1--", "../../../etc/passwd"},
+    },
+    "aws_waf": {
+        Name: "AWS WAF",
+        Headers: []string{"x-amzn-requestid", "x-amzn-errortype"},
+        BlockPages: []string{"AWS WAF", "Request blocked"},
+        ErrorCodes: []int{403},
+        Fingerprints: []string{"aws", "amazon"},
+        TestPayloads: []string{"<script>", "union select", "cmd="},
+    },
+    // Additional WAF signatures: ModSecurity, F5, Imperva, etc.
+}
+
+type WAFSignature struct {
+    Name         string
+    Headers      []string
+    BlockPages   []string
+    ErrorCodes   []int
+    Fingerprints []string
+    TestPayloads []string
+}
+
+// Hosting provider identification
+var HostingProviders = map[string]HostingProvider{
+    "aws": {
+        Name: "Amazon Web Services",
+        ASNs: []string{"AS16509", "AS14618"},
+        IPRanges: []string{"3.0.0.0/8", "13.0.0.0/8", "18.0.0.0/8"},
+        Domains: []string{".amazonaws.com", ".aws.amazon.com"},
+        Features: []string{"ec2", "s3", "cloudfront", "elb"},
+    },
+    "gcp": {
+        Name: "Google Cloud Platform",
+        ASNs: []string{"AS15169", "AS36040"},
+        IPRanges: []string{"34.64.0.0/10", "35.184.0.0/13"},
+        Domains: []string{".googleusercontent.com", ".googleapis.com"},
+        Features: []string{"gce", "gcs", "gae"},
+    },
+    "azure": {
+        Name: "Microsoft Azure",
+        ASNs: []string{"AS8075"},
+        IPRanges: []string{"13.64.0.0/11", "20.0.0.0/8"},
+        Domains: []string{".azurewebsites.net", ".azure.com"},
+        Features: []string{"vm", "storage", "cdn"},
+    },
+    // Additional hosting providers: DigitalOcean, Linode, Vultr, etc.
+}
+
+type HostingProvider struct {
+    Name     string
+    ASNs     []string
+    IPRanges []string
+    Domains  []string
+    Features []string
+}
+```
+
+### Detection Algorithms
+
+The protection detection system uses multiple techniques for accurate identification:
+
+```go
+// Multi-layered detection approach
+type DetectionEngine struct {
+    cdnDB     map[string]CDNSignature
+    wafDB     map[string]WAFSignature
+    hostingDB map[string]HostingProvider
+    geoIP     GeoIPDatabase
+    asnDB     ASNDatabase
+}
+
+// Detection methods with confidence scoring
+func (de *DetectionEngine) DetectCDN(ctx context.Context, target string) ([]ProtectionService, error) {
+    var services []ProtectionService
+
+    // 1. HTTP Header Analysis (40% weight)
+    headers := de.getHTTPHeaders(ctx, target)
+    cdnFromHeaders := de.analyzeCDNHeaders(headers)
+
+    // 2. IP Range Analysis (30% weight)
+    ips := de.resolveIPs(target)
+    cdnFromIPs := de.analyzeCDNIPs(ips)
+
+    // 3. CNAME Analysis (20% weight)
+    cnames := de.getCNAMERecords(target)
+    cdnFromCNAME := de.analyzeCDNCNAME(cnames)
+
+    // 4. ASN Analysis (10% weight)
+    cdnFromASN := de.analyzeCDNASN(ips)
+
+    // Combine results with weighted confidence scoring
+    return de.combineDetectionResults(cdnFromHeaders, cdnFromIPs, cdnFromCNAME, cdnFromASN), nil
+}
+
+func (de *DetectionEngine) DetectWAF(ctx context.Context, target string, port int) ([]ProtectionService, error) {
+    var services []ProtectionService
+
+    // 1. Passive Detection - HTTP Headers (50% weight)
+    headers := de.getHTTPHeaders(ctx, target)
+    wafFromHeaders := de.analyzeWAFHeaders(headers)
+
+    // 2. Active Detection - Test Payloads (30% weight)
+    wafFromPayloads := de.testWAFPayloads(ctx, target, port)
+
+    // 3. Error Page Analysis (20% weight)
+    wafFromErrors := de.analyzeErrorPages(ctx, target, port)
+
+    return de.combineWAFResults(wafFromHeaders, wafFromPayloads, wafFromErrors), nil
 }
 ```
 
@@ -341,6 +640,81 @@ _For any_ discovered web service, export options should be provided for integrat
 _For any_ Network_Mapper file operation, the same data directory structure should be used as other Letgo modules
 **Validates: Requirements 9.4, 9.5**
 
+### Property 21: Hostname IP Resolution
+
+_For any_ hostname provided as a target, all associated IP addresses should be resolved and displayed in the scan results
+**Validates: Requirements 10.1**
+
+### Property 22: Multiple IP Scanning Completeness
+
+_For any_ hostname that resolves to multiple IP addresses, all resolved IPs should be included in the scanning process
+**Validates: Requirements 10.2**
+
+### Property 23: Hostname and IP Display Completeness
+
+_For any_ scan result involving a hostname, both the original hostname and all resolved IP addresses should be shown in the output
+**Validates: Requirements 10.3**
+
+### Property 24: DNS Resolution Error Resilience
+
+_For any_ DNS resolution failure, the error should be logged and scanning should continue with remaining targets
+**Validates: Requirements 10.4**
+
+### Property 25: IPv6 Address Inclusion
+
+_For any_ hostname that resolves to IPv6 addresses, they should be included in results alongside IPv4 addresses
+**Validates: Requirements 10.5**
+
+### Property 26: CDN Detection Activation
+
+_For any_ web service scanned, CDN detection should be attempted to identify services like Cloudflare, Fastly, and CloudFront
+**Validates: Requirements 11.1**
+
+### Property 27: Protection Service Information Completeness
+
+_For any_ detected protection service, the output should include service name, type, and confidence level
+**Validates: Requirements 11.2**
+
+### Property 28: WAF Signature Analysis
+
+_For any_ HTTP headers analyzed, WAF signatures and security headers should be identified when present
+**Validates: Requirements 11.3**
+
+### Property 29: Multiple Protection Layer Detection
+
+_For any_ target with multiple protection layers, all identified services should be listed in the results
+**Validates: Requirements 11.4**
+
+### Property 30: Protection Status Indication
+
+_For any_ protection detection that is inconclusive, the protection status should be indicated as unknown rather than omitted
+**Validates: Requirements 11.5**
+
+### Property 31: Reverse DNS Lookup Execution
+
+_For any_ hostname analysis, reverse DNS lookups should be performed on all resolved IP addresses
+**Validates: Requirements 12.1**
+
+### Property 32: Hosting Provider Identification
+
+_For any_ identified IP address, hosting provider or ASN information should be determined and included
+**Validates: Requirements 12.2**
+
+### Property 33: Geolocation Information Inclusion
+
+_For any_ IP address where geolocation data is available, country and region information should be included
+**Validates: Requirements 12.3**
+
+### Property 34: SSL Certificate Analysis
+
+_For any_ SSL-enabled service, certificate details including issuer and subject alternative names should be extracted
+**Validates: Requirements 12.4**
+
+### Property 35: Subdomain Discovery Execution
+
+_For any_ domain when subdomain enumeration is enabled, related subdomain discovery should be attempted
+**Validates: Requirements 12.5**
+
 ## Error Handling
 
 The Network Mapper implements comprehensive error handling to ensure robust operation:
@@ -350,7 +724,11 @@ The Network Mapper implements comprehensive error handling to ensure robust oper
 - Connection timeouts: Retry with exponential backoff
 - Host unreachable: Mark host as down and continue
 - Port filtering: Detect and report filtered ports
-- DNS resolution failures: Log error and skip invalid targets
+- DNS resolution failures: Log error and continue with other targets
+- IPv6 resolution failures: Fall back to IPv4 only
+- Protection detection timeouts: Mark protection status as unknown
+- SSL certificate errors: Log error but continue with basic analysis
+- Subdomain enumeration failures: Continue with main domain analysis
 
 ### Resource Management
 
@@ -361,10 +739,13 @@ The Network Mapper implements comprehensive error handling to ensure robust oper
 
 ### Input Validation
 
-- IP address and hostname validation
+- IP address and hostname validation (IPv4 and IPv6)
 - Port range validation (1-65535)
 - CIDR notation parsing and validation
+- Domain name format validation
+- SSL certificate chain validation
 - Configuration parameter bounds checking
+- Protection detection payload sanitization
 
 ### Recovery Mechanisms
 
@@ -403,6 +784,9 @@ Key property tests include:
 - **Error Resilience**: Inject random network errors and verify continued operation
 - **State Management**: Generate random pause/resume sequences and verify scan state
 - **Format Compatibility**: Generate random results and verify all export formats work
+- **IP Resolution**: Generate random hostnames and verify all resolved IPs are included
+- **Protection Detection**: Generate random web services and verify protection analysis
+- **Infrastructure Analysis**: Generate random targets and verify hosting/certificate info
 
 ### Integration Testing
 

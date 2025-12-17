@@ -33,6 +33,9 @@ func ExampleProgressUsage() {
 		osFingerprinter,
 		targetResolver,
 		progressMonitor,
+		nil, // No IP resolver for this example
+		nil, // No protection detector for this example
+		nil, // No infrastructure analyzer for this example
 		log.Default(),
 	)
 
