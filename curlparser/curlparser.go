@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/letgo/cracker"
-	"github.com/letgo/ddos"
 )
 
 // CurlConfig represents parsed cURL command configuration
@@ -332,56 +331,4 @@ func LoadFromFile(filename string) ([]*CurlConfig, error) {
 	}
 
 	return configs, nil
-}
-
-// ToDDoSConfig converts CurlConfig to ddos.DDoSConfig
-func (cc *CurlConfig) ToDDoSConfig() (*ddos.DDoSConfig, error) {
-	if cc.URL == "" {
-		return nil, fmt.Errorf("URL is required")
-	}
-
-	config := &ddos.DDoSConfig{
-		TargetURL:        cc.URL,
-		Method:           cc.Method,
-		Headers:          cc.Headers,
-		Body:             cc.Data,
-		ContentType:      cc.ContentType,
-		FollowRedirects:  cc.FollowRedirects,
-		Timeout:          cc.Timeout,
-		MaxThreads:       100,              // Default threads
-		Duration:         60 * time.Second, // Default duration
-		AttackMode:       ddos.ModeFlood,   // Default mode
-		ReuseConnections: true,             // Better performance
-		SlowlorisDelay:   10 * time.Second, // Default slowloris delay
-	}
-
-	// Use shorter timeout for DDoS (faster failures)
-	if config.Timeout > 5*time.Second {
-		config.Timeout = 5 * time.Second
-	}
-
-	return config, nil
-}
-
-// LoadDDoSFromFile reads cURL commands from a file and returns DDoS configurations
-func LoadDDoSFromFile(filename string) ([]*ddos.DDoSConfig, error) {
-	curlConfigs, err := LoadFromFile(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	var ddosConfigs []*ddos.DDoSConfig
-	for _, curlConfig := range curlConfigs {
-		ddosConfig, err := curlConfig.ToDDoSConfig()
-		if err != nil {
-			continue // Skip invalid configs
-		}
-		ddosConfigs = append(ddosConfigs, ddosConfig)
-	}
-
-	if len(ddosConfigs) == 0 {
-		return nil, fmt.Errorf("no valid DDoS configurations found in file")
-	}
-
-	return ddosConfigs, nil
 }

