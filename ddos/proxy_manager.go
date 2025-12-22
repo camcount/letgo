@@ -10,28 +10,28 @@ import (
 
 // ProxyHealth tracks the health status of a proxy
 type ProxyHealth struct {
-	proxy          string
-	failures       int64
-	successes      int64
-	lastFailure    int64 // Unix timestamp in nanoseconds
-	lastSuccess    int64 // Unix timestamp in nanoseconds
-	disabled       int32 // Atomic: 0 = enabled, 1 = disabled
-	disabledUntil  int64 // Unix timestamp in nanoseconds when proxy can be retried
-	responseTime   int64 // Average response time in nanoseconds
-	requestCount   int64 // Total requests through this proxy
+	proxy         string
+	failures      int64
+	successes     int64
+	lastFailure   int64 // Unix timestamp in nanoseconds
+	lastSuccess   int64 // Unix timestamp in nanoseconds
+	disabled      int32 // Atomic: 0 = enabled, 1 = disabled
+	disabledUntil int64 // Unix timestamp in nanoseconds when proxy can be retried
+	responseTime  int64 // Average response time in nanoseconds
+	requestCount  int64 // Total requests through this proxy
 }
 
 // ProxyManager manages proxy health, selection, and recovery
 type ProxyManager struct {
-	proxies     []string
-	health      map[string]*ProxyHealth
-	mu          sync.RWMutex
-	failLimit   int
-	cooldown    time.Duration
+	proxies      []string
+	health       map[string]*ProxyHealth
+	mu           sync.RWMutex
+	failLimit    int
+	cooldown     time.Duration
 	recoveryTime time.Duration
-	
+
 	// Selection strategy
-	selectionIndex int64 // Atomic counter for round-robin
+	selectionIndex       int64 // Atomic counter for round-robin
 	useWeightedSelection bool
 }
 
@@ -44,8 +44,8 @@ func NewProxyManager(proxyList []string) *ProxyManager {
 	pm := &ProxyManager{
 		proxies:              make([]string, 0, len(proxyList)),
 		health:               make(map[string]*ProxyHealth, len(proxyList)),
-		failLimit:            10,                   // Increased from 3 to 10 for less aggressive disabling
-		cooldown:             5 * time.Second,      // Reduced from 10s to 5s for faster recovery
+		failLimit:            10,                  // Increased from 3 to 10 for less aggressive disabling
+		cooldown:             5 * time.Second,     // Reduced from 10s to 5s for faster recovery
 		recoveryTime:         30 * time.Second,    // Recovery window
 		useWeightedSelection: len(proxyList) > 10, // Use weighted selection for large lists
 	}
@@ -74,12 +74,12 @@ func (pm *ProxyManager) GetNextProxy() (string, bool) {
 	now := time.Now().UnixNano()
 	maxAttempts := len(pm.proxies) * 2 // Allow up to 2 rounds to find a proxy
 	attempts := 0
-	
+
 	// Try to find a healthy proxy (with max attempts to prevent infinite loops)
 	for attempts < maxAttempts {
 		attempts++
 		var proxy string
-		
+
 		if pm.useWeightedSelection {
 			proxy = pm.selectWeightedProxy()
 		} else {
@@ -340,24 +340,24 @@ func isValidProxyURL(proxy string) bool {
 	if proxy == "" {
 		return false
 	}
-	
+
 	// Quick format check: must contain :// or : (for IP:port format)
 	if !strings.Contains(proxy, "://") && !strings.Contains(proxy, ":") {
 		return false
 	}
-	
+
 	// Try parsing to validate structure
 	parsed, err := url.Parse(proxy)
 	if err != nil {
 		return false
 	}
-	
+
 	// Must have a scheme or be IP:port format
 	if parsed.Scheme == "" {
 		// IP:port format - validate basic structure
 		return strings.Contains(proxy, ":") && len(proxy) > 3
 	}
-	
+
 	// Supported schemes
 	supportedSchemes := []string{"http", "https", "socks5", "socks4"}
 	for _, scheme := range supportedSchemes {
@@ -365,7 +365,6 @@ func isValidProxyURL(proxy string) bool {
 			return true
 		}
 	}
-	
+
 	return false
 }
-

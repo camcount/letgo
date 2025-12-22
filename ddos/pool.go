@@ -23,7 +23,7 @@ type ClientPool struct {
 	clients     []*http.Client
 	transports  []*http.Transport
 	proxyMap    map[*http.Client]string // Maps client to proxy URL for tracking
-	index       int64                    // Atomic counter for round-robin
+	index       int64                   // Atomic counter for round-robin
 	poolSize    int
 	proxyList   []string
 	rotateProxy bool
@@ -37,10 +37,10 @@ type ClientPool struct {
 
 // PoolStats holds statistics about the connection pool
 type PoolStats struct {
-	TotalClients int
+	TotalClients  int
 	ActiveClients int
-	PoolHits     int64
-	PoolMisses   int64
+	PoolHits      int64
+	PoolMisses    int64
 }
 
 // NewClientPool creates a new connection pool with pre-configured clients
@@ -229,15 +229,15 @@ func createHTTP1Transport(config DDoSConfig, proxyURL *url.URL, useHTTP2 bool) *
 
 	transport := &http.Transport{
 		TLSClientConfig:       tlsConfig,
-		MaxIdleConns:          maxIdleConns, // Optimized: MaxThreads * 2
-		MaxIdleConnsPerHost:   100,          // Will be increased for proxies
-		MaxConnsPerHost:       0,            // Unlimited connections per host
+		MaxIdleConns:          maxIdleConns,     // Optimized: MaxThreads * 2
+		MaxIdleConnsPerHost:   100,              // Will be increased for proxies
+		MaxConnsPerHost:       0,                // Unlimited connections per host
 		IdleConnTimeout:       60 * time.Second, // Reduced from 90s for faster recycling
-		DisableKeepAlives:      false,            // Always reuse connections
-		DisableCompression:     true,             // Disable compression for efficiency
-		ResponseHeaderTimeout:  config.Timeout,
-		ExpectContinueTimeout:  500 * time.Millisecond, // Faster for proxy
-		DialContext:            dialer.DialContext,
+		DisableKeepAlives:     false,            // Always reuse connections
+		DisableCompression:    true,             // Disable compression for efficiency
+		ResponseHeaderTimeout: config.Timeout,
+		ExpectContinueTimeout: 500 * time.Millisecond, // Faster for proxy
+		DialContext:           dialer.DialContext,
 		// Proxy-specific optimizations
 		ProxyConnectHeader: nil, // No custom headers for proxy
 		ForceAttemptHTTP2:  useHTTP2,
@@ -263,7 +263,7 @@ func createHTTP1Transport(config DDoSConfig, proxyURL *url.URL, useHTTP2 bool) *
 func loadProxiesFromFile() ([]string, error) {
 	dataDir := paths.GetDataDir()
 	proxyFilePath := filepath.Join(dataDir, "proxy", "proxy.txt")
-	
+
 	file, err := os.Open(proxyFilePath)
 	if err != nil {
 		return nil, err
@@ -300,4 +300,3 @@ func createHTTP2TransportForProxy(config DDoSConfig, proxyURL *url.URL) (*http.T
 
 	return transport, nil
 }
-

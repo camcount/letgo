@@ -9,14 +9,14 @@ import (
 
 // AsyncSender sends HTTP requests asynchronously without waiting for responses
 type AsyncSender struct {
-	client      *http.Client
-	proxyURL    string // Proxy URL for this sender (for tracking)
-	sentCount   int64
-	errorCount  int64
+	client       *http.Client
+	proxyURL     string // Proxy URL for this sender (for tracking)
+	sentCount    int64
+	errorCount   int64
 	successCount int64 // Track successful requests
-	limiter     *GoroutineLimiter
-	onSuccess   func(proxy string, responseTime time.Duration) // Callback for success
-	onFailure   func(proxy string)                             // Callback for failure
+	limiter      *GoroutineLimiter
+	onSuccess    func(proxy string, responseTime time.Duration) // Callback for success
+	onFailure    func(proxy string)                             // Callback for failure
 	// Callbacks for main attack stats
 	onRequestSuccess func() // Callback when request succeeds
 	onRequestFailure func() // Callback when request fails
@@ -66,7 +66,7 @@ func (s *AsyncSender) SendAsync(req *http.Request, skipResponseReading bool) {
 	if s == nil || s.client == nil || req == nil {
 		return
 	}
-	
+
 	atomic.AddInt64(&s.sentCount, 1)
 	startTime := time.Now()
 
@@ -92,7 +92,7 @@ func (s *AsyncSender) SendAsync(req *http.Request, skipResponseReading bool) {
 func (s *AsyncSender) sendRequest(req *http.Request, skipResponseReading bool, startTime time.Time) {
 	resp, err := s.client.Do(req)
 	responseTime := time.Since(startTime)
-	
+
 	if err != nil {
 		atomic.AddInt64(&s.errorCount, 1)
 		if s.onRequestFailure != nil {
@@ -157,4 +157,3 @@ func (s *AsyncSender) Close() {
 		s.limiter.Close()
 	}
 }
-

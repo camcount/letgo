@@ -68,4 +68,3 @@ func (rc *RequestCache) GetRequest() *http.Request {
 func (rc *RequestCache) Refresh() {
 	rc.PreBuildRequests(rc.cacheSize)
 }
-

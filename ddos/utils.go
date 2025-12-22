@@ -55,7 +55,7 @@ func (gl *GoroutineLimiter) Execute(fn func()) {
 		// Limiter is closed or invalid, skip execution
 		return
 	}
-	
+
 	// Non-blocking semaphore acquisition - use select with default
 	// This prevents blocking and allows maximum throughput
 	select {
@@ -99,11 +99,11 @@ func (gl *GoroutineLimiter) Close() {
 
 // TokenBucket implements a token bucket rate limiter
 type TokenBucket struct {
-	capacity    int64         // Maximum tokens in bucket
-	tokens      int64         // Current tokens (atomic)
-	refillRate  int64         // Tokens per second
-	lastRefill  int64         // Last refill time in nanoseconds (atomic)
-	refillMutex sync.Mutex    // Protects refill operation
+	capacity    int64      // Maximum tokens in bucket
+	tokens      int64      // Current tokens (atomic)
+	refillRate  int64      // Tokens per second
+	lastRefill  int64      // Last refill time in nanoseconds (atomic)
+	refillMutex sync.Mutex // Protects refill operation
 }
 
 // NewTokenBucket creates a new token bucket rate limiter
@@ -156,4 +156,3 @@ func (tb *TokenBucket) Allow() bool {
 
 	return false // No tokens available
 }
-

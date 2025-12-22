@@ -23,11 +23,11 @@ func (d *DDoSAttack) createHTTP2Transport() (*http.Transport, error) {
 		maxIdleConns = 3000 // Minimum for high-throughput HTTP/2
 	}
 	transport := &http.Transport{
-		TLSClientConfig:     tlsConfig,
-		MaxIdleConns:        maxIdleConns,
-		MaxConnsPerHost:     0, // Unlimited connections per host
-		DisableKeepAlives:   false, // Always reuse connections
-		DisableCompression:  true,  // Disable compression for efficiency
+		TLSClientConfig:    tlsConfig,
+		MaxIdleConns:       maxIdleConns,
+		MaxConnsPerHost:    0,     // Unlimited connections per host
+		DisableKeepAlives:  false, // Always reuse connections
+		DisableCompression: true,  // Disable compression for efficiency
 		DialContext: (&net.Dialer{
 			Timeout:   d.config.Timeout,
 			KeepAlive: 15 * time.Second, // Reduced from 30s for faster connection turnover
@@ -54,7 +54,7 @@ func (d *DDoSAttack) createHTTP1Transport(numWorkers int) *http.Transport {
 		TLSClientConfig:     tlsConfig,
 		MaxIdleConns:        maxIdleConns,
 		MaxIdleConnsPerHost: numWorkers,
-		MaxConnsPerHost:     0, // Unlimited connections per host
+		MaxConnsPerHost:     0,                // Unlimited connections per host
 		IdleConnTimeout:     60 * time.Second, // Increased from 30s for better reuse
 		DisableKeepAlives:   false,            // Always reuse connections
 		DisableCompression:  true,             // Disable compression for efficiency
@@ -213,4 +213,3 @@ func (d *DDoSAttack) parseTargetURL(targetURL string, useTLS bool) (host, port, 
 
 	return host, port, path
 }
-
