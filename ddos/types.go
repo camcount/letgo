@@ -21,25 +21,31 @@ const (
 // DDoSConfig holds configuration for DDoS attack
 type DDoSConfig struct {
 	// Required fields
-	TargetURL  string        // Required: Simple URL (http:// or https://)
-	Method     string        // GET, POST, etc. (default: GET)
-	Headers    map[string]string
-	Body       string
+	TargetURL   string // Required: Simple URL (http:// or https://)
+	Method      string // GET, POST, etc. (default: GET)
+	Headers     map[string]string
+	Body        string
 	ContentType string
-	MaxThreads int           // Default: 500
-	Duration   time.Duration // Default: 60s
-	Timeout    time.Duration // Default: 5s
-	AttackMode AttackMode    // flood, http2, raw (default: flood)
+	MaxThreads  int           // Default: 500
+	Duration    time.Duration // Default: 60s
+	Timeout     time.Duration // Default: 5s
+	AttackMode  AttackMode    // flood, http2, raw (default: flood)
 
 	// Proxy settings (optional, but highly recommended for efficiency)
 	ProxyList   []string // Auto-loaded from proxy/proxy.txt if available
 	RotateProxy bool     // Default: true (distributes load across IPs)
 
 	// Advanced settings (optional, rarely needed)
-	RateLimit       int    // 0 = unlimited
-	FollowRedirects bool
-	UserAgentFile   string // Optional: custom user agents file (default: built-in rotation)
-	MaxStreamsPerConn int  // Maximum HTTP/2 streams per connection (default: 100)
+	RateLimit         int // 0 = unlimited
+	FollowRedirects   bool
+	UserAgentFile     string // Optional: custom user agents file (default: built-in rotation)
+	MaxStreamsPerConn int    // Maximum HTTP/2 streams per connection (default: 100)
+
+	// Efficiency features (all enabled by default for best performance)
+	EnableConnectionPooling    bool // Connection pooling for reuse (default: true)
+	EnableFireAndForget        bool // Fire-and-forget requests (default: true)
+	EnableResponseBodySkipping bool // Skip reading response bodies (default: true)
+	EnableRequestRandomization bool // Randomize headers and query params (default: true)
 
 	// Callbacks
 	OnProgress func(stats AttackStats)
@@ -79,31 +85,24 @@ type DDoSAttack struct {
 	bytesReceived     int64
 	activeConns       int64
 	totalResponseTime int64 // in nanoseconds
-	proxyIndex        int64 // Current proxy index for rotation
 
-	// User agents
-	userAgents     []string // List of user agents to rotate from
-	userAgentIndex int64
-
-	// Proxy health tracking
-	proxies        []string        // Working copy of proxies used by this attack
-	proxyFailures  map[string]int  // Consecutive failure count per proxy
-	proxyDisabled  map[string]bool // Proxies marked as unhealthy
-	proxyFailLimit int             // Failures before marking a proxy unhealthy
-	proxyMu        sync.Mutex      // Protects proxyFailures/proxyDisabled
+	// Proxy health tracking (optimized)
+	proxyManager *ProxyManager // Manages proxy health, selection, and recovery
 
 	startTime time.Time
 	running   bool
 	mu        sync.Mutex
 
 	// Efficiency components (initialized when needed)
-	clientPool      interface{} // *ClientPool - connection pool manager
-	requestBuilder  interface{} // *RequestBuilder - request builder with randomization
-	rawSocketPool   interface{} // *RawSocketPool - raw socket pool (if using raw sockets)
+	clientPool     any // *ClientPool - connection pool manager
+	requestBuilder any // *RequestBuilder - request builder with randomization
+
+	// Rate limiting
+	rateLimiter *TokenBucket // Token bucket rate limiter (when RateLimit > 0)
 
 	// Pool statistics
-	poolHits        int64 // Atomic counter for pool hits
-	poolMisses      int64 // Atomic counter for pool misses
-	totalBatches    int64 // Atomic counter for total batches
+	poolHits          int64 // Atomic counter for pool hits
+	poolMisses        int64 // Atomic counter for pool misses
+	totalBatches      int64 // Atomic counter for total batches
 	successfulBatches int64 // Atomic counter for successful batches
 }

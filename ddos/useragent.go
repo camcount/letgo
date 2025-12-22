@@ -6,19 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 
 	"github.com/letgo/paths"
 )
-
-// getRandomUserAgent returns a random user agent from the attack's user agent list
-func (d *DDoSAttack) getRandomUserAgent() string {
-	if len(d.userAgents) == 0 {
-		return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-	}
-	idx := atomic.AddInt64(&d.userAgentIndex, 1)
-	return d.userAgents[idx%int64(len(d.userAgents))]
-}
 
 // getBuiltInUserAgents returns the default built-in user agents
 func getBuiltInUserAgents() []string {
@@ -35,6 +25,7 @@ func getBuiltInUserAgents() []string {
 }
 
 // loadUserAgentsFromFile loads user agents from a file (one per line)
+// Optimized for performance: deduplicates entries and pre-allocates capacity
 func loadUserAgentsFromFile(filePath string) ([]string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -42,13 +33,25 @@ func loadUserAgentsFromFile(filePath string) ([]string, error) {
 	}
 	defer file.Close()
 
-	var agents []string
+	// Use map for deduplication (many user-agent.txt files have duplicates)
+	seen := make(map[string]bool)
+	// Pre-allocate with reasonable capacity (most files have 100-300 entries)
+	agents := make([]string, 0, 200)
+
 	scanner := bufio.NewScanner(file)
+	// Increase buffer size for better I/O performance on large files
+	buf := make([]byte, 0, 64*1024) // 64KB buffer
+	scanner.Buffer(buf, 1024*1024)  // Max 1MB line length
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		// Skip empty lines and comments
 		if line != "" && !strings.HasPrefix(line, "#") {
-			agents = append(agents, line)
+			// Deduplicate: only add if not seen before
+			if !seen[line] {
+				seen[line] = true
+				agents = append(agents, line)
+			}
 		}
 	}
 
@@ -60,13 +63,26 @@ func loadUserAgentsFromFile(filePath string) ([]string, error) {
 		return nil, fmt.Errorf("no user agents found in file")
 	}
 
+	// Trim to actual size to save memory
+	if cap(agents) > len(agents)*2 {
+		trimmed := make([]string, len(agents))
+		copy(trimmed, agents)
+		return trimmed, nil
+	}
+
 	return agents, nil
 }
 
 // loadUserAgentsFromDefaultFile loads user agents from the default user-agent.txt file
+// It looks for the file in application/data/user-agent.txt
 func loadUserAgentsFromDefaultFile() ([]string, error) {
 	dataDir := paths.GetDataDir()
 	userAgentFilePath := filepath.Join(dataDir, "user-agent.txt")
+
+	// Verify file exists before attempting to load
+	if _, err := os.Stat(userAgentFilePath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("user agent file not found at: %s", userAgentFilePath)
+	}
+
 	return loadUserAgentsFromFile(userAgentFilePath)
 }
-

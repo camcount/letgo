@@ -412,11 +412,12 @@ func (m *Menu) ddosAttack() {
 		AttackMode: ddos.ModeFlood,
 	}
 
-	// Auto-detect optimal attack mode if Quick Start
+	// Set Quick Start defaults: HTTP Flood mode, 800 threads, 1200 sec duration
 	if useQuickStart {
-		info := ddos.DetectTargetCapabilities(targetURL, len(baseConfig.ProxyList))
-		baseConfig.AttackMode = ddos.SuggestOptimalAttackMode(info)
-		fmt.Printf("✓ Auto-detected attack mode: %s\n", baseConfig.AttackMode)
+		baseConfig.AttackMode = ddos.ModeFlood
+		baseConfig.MaxThreads = 800
+		baseConfig.Duration = 1200 * time.Second
+		fmt.Printf("✓ Quick Start: HTTP Flood mode, 800 threads, 1200 sec duration\n")
 	}
 
 	selectedConfigs = []*ddos.DDoSConfig{&baseConfig}
@@ -426,17 +427,27 @@ func (m *Menu) ddosAttack() {
 	// Apply Quick Start or Preset if selected
 	if useQuickStart {
 		fmt.Println("\n✓ Quick Start Mode - Auto-detecting optimal settings...")
-		
-		// Auto-load proxies from default file (enabled by default)
-		proxies, err := m.loadValidProxies()
-		if err == nil && len(proxies) > 0 {
-			for i := range selectedConfigs {
-				selectedConfigs[i].ProxyList = proxies
-				selectedConfigs[i].RotateProxy = true
+
+		// Ask if using proxy (default: y)
+		fmt.Print("Use proxy for attacks? (y/n, default: y): ")
+		useProxyStr, _ := reader.ReadString('\n')
+		useProxyStr = strings.TrimSpace(strings.ToLower(useProxyStr))
+		useProxy := useProxyStr == "" || useProxyStr == "y" || useProxyStr == "yes"
+
+		if useProxy {
+			// Auto-load proxies from default file
+			proxies, err := m.loadValidProxies()
+			if err == nil && len(proxies) > 0 {
+				for i := range selectedConfigs {
+					selectedConfigs[i].ProxyList = proxies
+					selectedConfigs[i].RotateProxy = true
+				}
+				fmt.Printf("✓ Auto-loaded %d proxies from proxy.txt (rotation enabled)\n", len(proxies))
+			} else {
+				fmt.Println("⚠ No proxies found in proxy.txt - continuing without proxies")
 			}
-			fmt.Printf("✓ Auto-loaded %d proxies from proxy.txt (enabled by default)\n", len(proxies))
 		} else {
-			fmt.Println("⚠ No proxies found in proxy.txt - continuing without proxies")
+			fmt.Println("✓ Proxy disabled")
 		}
 
 		// Auto-load user agents from default file (enabled by default)
@@ -485,18 +496,91 @@ func (m *Menu) ddosAttack() {
 		// Manual configuration mode
 		fmt.Println("\n===== DDoS Configuration =====")
 
-		// Auto-load proxies from default file (enabled by default)
+		// Ask if using proxy (default: y)
+		fmt.Print("Use proxy for attacks? (y/n, default: y): ")
+		useProxyStr, _ := reader.ReadString('\n')
+		useProxyStr = strings.TrimSpace(strings.ToLower(useProxyStr))
+		useProxy := useProxyStr == "" || useProxyStr == "y" || useProxyStr == "yes"
+
 		var proxyList []string
 		var rotateProxy bool
-		proxies, err := m.loadValidProxies()
-		if err == nil && len(proxies) > 0 {
-			proxyList = proxies
-			rotateProxy = true // Default to rotation enabled
-			fmt.Printf("✓ Auto-loaded %d proxies from proxy.txt (enabled by default)\n", len(proxyList))
+		if useProxy {
+			// Auto-load proxies from default file
+			proxies, err := m.loadValidProxies()
+			if err == nil && len(proxies) > 0 {
+				proxyList = proxies
+				rotateProxy = true // Default to rotation enabled
+				fmt.Printf("✓ Auto-loaded %d proxies from proxy.txt (rotation enabled)\n", len(proxyList))
+			} else {
+				proxyPath := filepath.Join(dataDir, "proxy", "proxy.txt")
+				fmt.Printf("⚠ No valid proxies found in %s (%v)\n", proxyPath, err)
+				fmt.Println("Continuing without proxies...")
+			}
 		} else {
-			proxyPath := filepath.Join(dataDir, "proxy", "proxy.txt")
-			fmt.Printf("⚠ No valid proxies found in %s (%v)\n", proxyPath, err)
-			fmt.Println("Continuing without proxies...")
+			fmt.Println("✓ Proxy disabled")
+		}
+
+		// Efficiency features configuration
+		fmt.Println("\n===== Efficiency Features =====")
+		fmt.Println("All efficiency features are enabled by default:")
+		fmt.Println("  - Connection pooling")
+		fmt.Println("  - Fire-and-forget requests")
+		fmt.Println("  - Response body skipping")
+		fmt.Println("  - Request randomization")
+		fmt.Print("Configure efficiency features? (y/n, default: n): ")
+		configEfficiencyStr, _ := reader.ReadString('\n')
+		configEfficiencyStr = strings.TrimSpace(strings.ToLower(configEfficiencyStr))
+		configEfficiency := configEfficiencyStr == "y" || configEfficiencyStr == "yes"
+
+		// Default: all enabled
+		enableConnectionPooling := true
+		enableFireAndForget := true
+		enableResponseBodySkipping := true
+		enableRequestRandomization := true
+
+		if configEfficiency {
+			// Allow user to configure each feature
+			fmt.Print("Enable connection pooling? (y/n, default: y): ")
+			poolStr, _ := reader.ReadString('\n')
+			poolStr = strings.TrimSpace(strings.ToLower(poolStr))
+			enableConnectionPooling = poolStr == "" || poolStr == "y" || poolStr == "yes"
+			if enableConnectionPooling {
+				fmt.Println("✓ Connection pooling enabled")
+			} else {
+				fmt.Println("✓ Connection pooling disabled")
+			}
+
+			fmt.Print("Enable fire-and-forget requests? (y/n, default: y): ")
+			fireForgetStr, _ := reader.ReadString('\n')
+			fireForgetStr = strings.TrimSpace(strings.ToLower(fireForgetStr))
+			enableFireAndForget = fireForgetStr == "" || fireForgetStr == "y" || fireForgetStr == "yes"
+			if enableFireAndForget {
+				fmt.Println("✓ Fire-and-forget enabled")
+			} else {
+				fmt.Println("✓ Fire-and-forget disabled")
+			}
+
+			fmt.Print("Enable response body skipping? (y/n, default: y): ")
+			skipBodyStr, _ := reader.ReadString('\n')
+			skipBodyStr = strings.TrimSpace(strings.ToLower(skipBodyStr))
+			enableResponseBodySkipping = skipBodyStr == "" || skipBodyStr == "y" || skipBodyStr == "yes"
+			if enableResponseBodySkipping {
+				fmt.Println("✓ Response body skipping enabled")
+			} else {
+				fmt.Println("✓ Response body skipping disabled")
+			}
+
+			fmt.Print("Enable request randomization? (y/n, default: y): ")
+			randomizeStr, _ := reader.ReadString('\n')
+			randomizeStr = strings.TrimSpace(strings.ToLower(randomizeStr))
+			enableRequestRandomization = randomizeStr == "" || randomizeStr == "y" || randomizeStr == "yes"
+			if enableRequestRandomization {
+				fmt.Println("✓ Request randomization enabled")
+			} else {
+				fmt.Println("✓ Request randomization disabled")
+			}
+		} else {
+			fmt.Println("✓ All efficiency features enabled (default)")
 		}
 
 		// Attack Mode (simplified to 3 modes)
@@ -633,6 +717,11 @@ func (m *Menu) ddosAttack() {
 			config.UserAgentFile = baseConfig.UserAgentFile
 			// Apply HTTP/2 settings
 			config.MaxStreamsPerConn = maxStreamsPerConn
+			// Apply efficiency features
+			config.EnableConnectionPooling = enableConnectionPooling
+			config.EnableFireAndForget = enableFireAndForget
+			config.EnableResponseBodySkipping = enableResponseBodySkipping
+			config.EnableRequestRandomization = enableRequestRandomization
 		}
 	} // End of manual configuration mode
 
@@ -687,7 +776,7 @@ startAttack:
 	fmt.Println("\n" + strings.Repeat("=", 70))
 	fmt.Println("                    DDoS ATTACK IN PROGRESS")
 	fmt.Println(strings.Repeat("=", 70))
-	
+
 	// Display configuration summary for quick start mode
 	firstConfig := selectedConfigs[0]
 	if useQuickStart {
@@ -718,7 +807,7 @@ startAttack:
 		}
 		fmt.Println(strings.Repeat("=", 70))
 	}
-	
+
 	fmt.Println("\nPress Ctrl+C to stop the attack...")
 	fmt.Println()
 

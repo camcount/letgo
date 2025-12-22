@@ -18,7 +18,7 @@ type RequestCache struct {
 // NewRequestCache creates a new request cache
 func NewRequestCache(builder *RequestBuilder, cacheSize int) *RequestCache {
 	if cacheSize <= 0 {
-		cacheSize = 10000
+		cacheSize = 50000 // Increased from 10000 to 50000 for better cache hit rate
 	}
 
 	cache := &RequestCache{
@@ -48,19 +48,20 @@ func (rc *RequestCache) PreBuildRequests(count int) {
 	}
 }
 
-// GetRequest returns the next cached request (round-robin)
+// GetRequest returns the next cached request (round-robin, lock-free)
 func (rc *RequestCache) GetRequest() *http.Request {
-	rc.mu.RLock()
-	defer rc.mu.RUnlock()
-
-	if len(rc.cachedRequests) == 0 {
+	// Lock-free read: slice reads are safe in Go as long as slice isn't modified
+	// We only read, never modify cachedRequests after initial build
+	cachedLen := len(rc.cachedRequests)
+	if cachedLen == 0 {
 		// Fallback to building on demand
 		req, _ := rc.builder.BuildRequest()
 		return req
 	}
 
+	// Lock-free atomic access for index
 	idx := atomic.AddInt64(&rc.index, 1) - 1
-	return rc.cachedRequests[int(idx)%len(rc.cachedRequests)]
+	return rc.cachedRequests[int(idx)%cachedLen]
 }
 
 // Refresh refreshes the cache with new requests
