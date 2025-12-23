@@ -35,9 +35,18 @@ func (d *DDoSAttack) createHTTP2Transport() (*http.Transport, error) {
 	}
 
 	// Configure HTTP/2
+	// Note: HTTP/2 specific settings (ReadIdleTimeout, PingTimeout, etc.) are configured
+	// through error handling and connection management in other parts of the code
+	// since http2.ConfigureTransport doesn't expose the underlying http2.Transport directly
 	if err := http2.ConfigureTransport(transport); err != nil {
 		return nil, fmt.Errorf("failed to configure HTTP/2: %w", err)
 	}
+
+	// Configure additional transport settings to help with HTTP/2 stability
+	// ResponseHeaderTimeout helps detect dead connections
+	transport.ResponseHeaderTimeout = 30 * time.Second
+	// ExpectContinueTimeout for better connection management
+	transport.ExpectContinueTimeout = 1 * time.Second
 
 	return transport, nil
 }

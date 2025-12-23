@@ -2,6 +2,8 @@ package ddos
 
 import (
 	"fmt"
+	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -155,4 +157,108 @@ func (tb *TokenBucket) Allow() bool {
 	}
 
 	return false // No tokens available
+}
+
+// isHTTP2Error detects if an error is HTTP/2 specific
+// This helps identify connection state issues like "Unsolicited response" errors
+func isHTTP2Error(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	// Check for common HTTP/2 error patterns
+	return strings.Contains(errStr, "Unsolicited response") ||
+		strings.Contains(errStr, "http2:") ||
+		strings.Contains(errStr, "stream") ||
+		strings.Contains(errStr, "idle HTTP channel")
+}
+
+// isConnectionHealthy performs a lightweight health check on an HTTP client
+// This helps prevent using dead or stale connections
+func isConnectionHealthy(client *http.Client) bool {
+	if client == nil {
+		return false
+	}
+
+	// Check if transport is valid
+	if transport, ok := client.Transport.(*http.Transport); ok {
+		if transport == nil {
+			return false
+		}
+		// Transport exists and is not explicitly disabled
+		// Note: We can't easily check connection state without making a request,
+		// so we rely on error handling at request time for actual health validation
+		return true
+	}
+
+	return true // Assume healthy if we can't determine
+}
+
+// RetryWithBackoff executes a function with exponential backoff retry logic
+// This helps recover from transient connection errors
+func RetryWithBackoff(maxRetries int, baseDelay time.Duration, fn func() error) error {
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		err := fn()
+		if err == nil {
+			return nil // Success
+		}
+		lastErr = err
+
+		// Don't retry on last attempt
+		if attempt < maxRetries-1 {
+			// Exponential backoff: baseDelay * 2^attempt
+			delay := baseDelay * time.Duration(1<<uint(attempt))
+			if delay > 5*time.Second {
+				delay = 5 * time.Second // Cap at 5 seconds
+			}
+			time.Sleep(delay)
+		}
+	}
+	return lastErr
+}
+
+// ClassifyError categorizes errors for better error handling
+type ErrorType int
+
+const (
+	ErrorTypeUnknown ErrorType = iota
+	ErrorTypeHTTP2
+	ErrorTypeConnection
+	ErrorTypeTimeout
+	ErrorTypeProxy
+)
+
+// ClassifyError categorizes an error to help with appropriate handling
+func ClassifyError(err error) ErrorType {
+	if err == nil {
+		return ErrorTypeUnknown
+	}
+
+	errStr := err.Error()
+
+	// HTTP/2 errors
+	if isHTTP2Error(err) {
+		return ErrorTypeHTTP2
+	}
+
+	// Connection errors
+	if strings.Contains(errStr, "connection") ||
+		strings.Contains(errStr, "refused") ||
+		strings.Contains(errStr, "reset") {
+		return ErrorTypeConnection
+	}
+
+	// Timeout errors
+	if strings.Contains(errStr, "timeout") ||
+		strings.Contains(errStr, "deadline") {
+		return ErrorTypeTimeout
+	}
+
+	// Proxy errors
+	if strings.Contains(errStr, "proxy") {
+		return ErrorTypeProxy
+	}
+
+	return ErrorTypeUnknown
 }

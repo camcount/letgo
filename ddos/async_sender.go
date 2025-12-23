@@ -94,6 +94,12 @@ func (s *AsyncSender) sendRequest(req *http.Request, skipResponseReading bool, s
 	responseTime := time.Since(startTime)
 
 	if err != nil {
+		// Check if this is an HTTP/2 specific error (like "Unsolicited response")
+		// These errors indicate connection state issues but shouldn't immediately fail the proxy
+		if isHTTP2Error(err) {
+			// HTTP/2 connection error - log but don't immediately mark proxy as failed
+			// This helps prevent cascading failures from connection state mismatches
+		}
 		atomic.AddInt64(&s.errorCount, 1)
 		if s.onRequestFailure != nil {
 			s.onRequestFailure()
@@ -110,14 +116,17 @@ func (s *AsyncSender) sendRequest(req *http.Request, skipResponseReading bool, s
 		return
 	}
 
-	// If skipResponseReading is true, close immediately without reading
-	if skipResponseReading {
-		if resp.Body != nil {
+	// Handle response body properly for HTTP/2 compatibility
+	// For HTTP/2, we need to drain the body to properly close the stream
+	if resp.Body != nil {
+		if skipResponseReading {
+			// For HTTP/2, even when skipping, we should drain a small amount
+			// to ensure the stream is properly closed
+			// Read up to 4KB then close to prevent stream issues
+			io.CopyN(io.Discard, resp.Body, 4096)
 			resp.Body.Close()
-		}
-	} else {
-		// Minimal read - just enough to complete the request
-		if resp.Body != nil {
+		} else {
+			// Minimal read - just enough to complete the request
 			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 		}

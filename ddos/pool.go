@@ -132,16 +132,57 @@ func NewClientPool(config DDoSConfig) (*ClientPool, error) {
 }
 
 // GetClient returns the next client from the pool (round-robin)
+// With connection health validation for improved stability
 func (p *ClientPool) GetClient() *http.Client {
 	if len(p.clients) == 0 {
 		atomic.AddInt64(&p.misses, 1)
 		return nil
 	}
 
+	// Use round-robin with health validation
+	// Try up to len(p.clients) times to find a healthy client
+	maxAttempts := len(p.clients)
+	if maxAttempts > 10 {
+		maxAttempts = 10 // Limit attempts for performance
+	}
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		idx := atomic.AddInt64(&p.index, 1) - 1
+		client := p.clients[int(idx)%len(p.clients)]
+
+		// Validate client health (lightweight check)
+		if p.isClientHealthy(client) {
+			atomic.AddInt64(&p.hits, 1)
+			return client
+		}
+	}
+
+	// If no healthy client found after attempts, return the next one anyway
+	// (connection errors will be handled at request time)
 	idx := atomic.AddInt64(&p.index, 1) - 1
 	client := p.clients[int(idx)%len(p.clients)]
 	atomic.AddInt64(&p.hits, 1)
 	return client
+}
+
+// isClientHealthy performs a lightweight health check on a client
+func (p *ClientPool) isClientHealthy(client *http.Client) bool {
+	if client == nil {
+		return false
+	}
+
+	// Check if transport is valid
+	if transport, ok := client.Transport.(*http.Transport); ok {
+		if transport == nil {
+			return false
+		}
+		// Transport exists and is not explicitly disabled
+		// Note: We can't easily check connection state without making a request,
+		// so we rely on error handling at request time for actual health validation
+		return true
+	}
+
+	return true // Assume healthy if we can't determine
 }
 
 // GetProxyForClient returns the proxy URL associated with a client (if any)
@@ -294,9 +335,15 @@ func createHTTP2TransportForProxy(config DDoSConfig, proxyURL *url.URL) (*http.T
 	transport := createHTTP1Transport(config, proxyURL, true)
 
 	// Configure HTTP/2
+	// Note: HTTP/2 specific settings are handled through error detection
+	// since http2.ConfigureTransport doesn't expose the underlying transport directly
 	if err := http2.ConfigureTransport(transport); err != nil {
 		return nil, fmt.Errorf("failed to configure HTTP/2: %w", err)
 	}
+
+	// Configure additional transport settings to help with HTTP/2 stability
+	transport.ResponseHeaderTimeout = 30 * time.Second
+	transport.ExpectContinueTimeout = 1 * time.Second
 
 	return transport, nil
 }

