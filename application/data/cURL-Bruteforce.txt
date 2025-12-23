@@ -1,20 +1,18 @@
-curl 'https://aoportal.airportthai.co.th/publicpage/login.jsp' \
-  -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8' \
-  -H 'Accept-Language: en-US,en;q=0.6' \
-  -H 'Cache-Control: max-age=0' \
-  -H 'Connection: keep-alive' \
-  -H 'Content-Type: application/x-www-form-urlencoded' \
-  -b 'JSESSIONID=Tmoy2yeW4brEW9jv2fbys23FmK8J1rZzFmVcPLRO.dccedadmz1' \
-  -H 'Origin: https://aoportal.airportthai.co.th' \
-  -H 'Referer: https://aoportal.airportthai.co.th/publicpage/' \
-  -H 'Sec-Fetch-Dest: document' \
-  -H 'Sec-Fetch-Mode: navigate' \
-  -H 'Sec-Fetch-Site: same-origin' \
-  -H 'Sec-Fetch-User: ?1' \
-  -H 'Sec-GPC: 1' \
-  -H 'Upgrade-Insecure-Requests: 1' \
-  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36' \
-  -H 'sec-ch-ua: "Brave";v="143", "Chromium";v="143", "Not A(Brand";v="24"' \
+curl 'https://origin-staffportal.airportthai.co.th/fo/account/login' \
+  -H 'accept: application/json, text/javascript, */*; q=0.01' \
+  -H 'accept-language: en-US,en;q=0.9' \
+  -H 'cache-control: no-cache' \
+  -H 'content-type: application/x-www-form-urlencoded; charset=UTF-8' \
+  -H 'origin: https://origin-staffportal.airportthai.co.th' \
+  -H 'pragma: no-cache' \
+  -H 'priority: u=1, i' \
+  -H 'referer: https://origin-staffportal.airportthai.co.th/fo/account/login' \
+  -H 'sec-ch-ua: "Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="24"' \
   -H 'sec-ch-ua-mobile: ?0' \
   -H 'sec-ch-ua-platform: "Windows"' \
-  --data-raw 'username=dsfds&pass=sdfdsf'
+  -H 'sec-fetch-dest: empty' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36' \
+  -H 'x-requested-with: XMLHttpRequest' \
+  --data-raw 'userName=sadsad%40dfsdf.dsad&password=sadsadsadsadsad&returnUrl='
