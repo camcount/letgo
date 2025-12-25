@@ -38,30 +38,44 @@ func FormatDuration(d time.Duration) string {
 type GoroutineLimiter struct {
 	semaphore chan struct{}
 	wg        sync.WaitGroup
+	blocking  bool // If true, blocks when full; if false, skips execution
 }
 
 // NewGoroutineLimiter creates a new limiter with max concurrent goroutines
+// Defaults to blocking mode for stability
 func NewGoroutineLimiter(maxConcurrent int) *GoroutineLimiter {
 	if maxConcurrent <= 0 {
 		maxConcurrent = 1000 // Default limit
 	}
 	return &GoroutineLimiter{
 		semaphore: make(chan struct{}, maxConcurrent),
+		blocking:  true, // Default to blocking for stability
+	}
+}
+
+// NewGoroutineLimiterNonBlocking creates a new limiter with non-blocking behavior
+// Use this only when you need non-blocking behavior (e.g., for specific use cases)
+func NewGoroutineLimiterNonBlocking(maxConcurrent int) *GoroutineLimiter {
+	if maxConcurrent <= 0 {
+		maxConcurrent = 1000 // Default limit
+	}
+	return &GoroutineLimiter{
+		semaphore: make(chan struct{}, maxConcurrent),
+		blocking:  false, // Non-blocking mode
 	}
 }
 
 // Execute runs a function with goroutine limiting and panic recovery
-// Optimized: non-blocking with select default (removed timeout for maximum throughput)
+// Uses blocking mode by default for stability, but can be configured for non-blocking
 func (gl *GoroutineLimiter) Execute(fn func()) {
 	if gl == nil || gl.semaphore == nil {
 		// Limiter is closed or invalid, skip execution
 		return
 	}
 
-	// Non-blocking semaphore acquisition - use select with default
-	// This prevents blocking and allows maximum throughput
-	select {
-	case gl.semaphore <- struct{}{}: // Acquire
+	if gl.blocking {
+		// Blocking mode: wait for semaphore slot (stable, prevents request loss)
+		gl.semaphore <- struct{}{} // Acquire (blocks if full)
 		gl.wg.Add(1)
 		go func() {
 			defer func() {
@@ -75,10 +89,27 @@ func (gl *GoroutineLimiter) Execute(fn func()) {
 			}()
 			fn()
 		}()
-	default:
-		// Semaphore full - skip this execution (non-blocking)
-		// This allows maximum throughput without blocking workers
-		return
+	} else {
+		// Non-blocking mode: skip if semaphore is full (for specific use cases)
+		select {
+		case gl.semaphore <- struct{}{}: // Acquire
+			gl.wg.Add(1)
+			go func() {
+				defer func() {
+					<-gl.semaphore // Release
+					gl.wg.Done()
+					// Recover from panics to prevent crashes
+					if r := recover(); r != nil {
+						// Log or handle panic if needed
+						_ = r
+					}
+				}()
+				fn()
+			}()
+		default:
+			// Semaphore full - skip this execution (non-blocking)
+			return
+		}
 	}
 }
 

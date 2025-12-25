@@ -172,6 +172,11 @@ func (d *DDoSAttack) cleanup() {
 	if pool, ok := d.clientPool.(*ClientPool); ok && pool != nil {
 		pool.Close()
 	}
+
+	// Close global limiter if it exists (waits for all goroutines to complete)
+	if d.globalLimiter != nil {
+		d.globalLimiter.Close()
+	}
 }
 
 // warmupConnections pre-establishes connections to improve initial throughput

@@ -108,6 +108,9 @@ type DDoSAttack struct {
 	// Rate limiting
 	rateLimiter *TokenBucket // Token bucket rate limiter (when RateLimit > 0)
 
+	// Concurrency control
+	globalLimiter *GoroutineLimiter // Shared goroutine limiter for flood attack (bounded concurrency)
+
 	// Pool statistics
 	poolHits          int64 // Atomic counter for pool hits
 	poolMisses        int64 // Atomic counter for pool misses
